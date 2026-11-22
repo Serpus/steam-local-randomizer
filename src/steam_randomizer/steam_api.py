@@ -4,7 +4,8 @@ Endpoint: https://api.steampowered.com/IStoreBrowseService/GetItems/v1/
 Up to 100 appids per request. No API key required.
 Falls back silently to {} on any network failure.
 
-Cache: %APPDATA%\\steam-local-randomizer\\store_items_cache.json
+Cache: per-user config dir (Windows: %APPDATA%, Linux: ~/.config),
+       steam-local-randomizer/store_items_cache.json
 TTL: 7 days.
 """
 from __future__ import annotations
@@ -17,6 +18,8 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from .settings import config_dir
 
 _ITEMS_URL = "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/"
 _CACHE_FILENAME = "store_items_cache.json"
@@ -37,10 +40,10 @@ def _debug(msg: str) -> None:
 
 
 def _cache_path() -> Path | None:
-    appdata = os.environ.get("APPDATA")
-    if not appdata:
+    base = config_dir()
+    if base is None:
         return None
-    return Path(appdata) / "steam-local-randomizer" / _CACHE_FILENAME
+    return base / _CACHE_FILENAME
 
 
 def _load_cache() -> dict[str, str]:
