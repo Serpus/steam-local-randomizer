@@ -211,14 +211,14 @@ class TestFindSteamLinux:
 
         # Добавляем валидный fallback
         valid_steam = tmp_path / "valid_steam"
-        (valid_steam / "steamapps").mkdir()
+        (valid_steam / "steamapps").mkdir(parents=True)  # FIX: parents=True
 
         monkeypatch.setattr(Path, "home", lambda: fake_home)
         monkeypatch.delenv("STEAM_PATH", raising=False)
         monkeypatch.delenv("XDG_DATA_HOME", raising=False)
 
         with patch("steam_randomizer.steam_locator._LINUX_FALLBACK_PATHS",
-                  (broken_symlink, valid_steam)):
+                   (broken_symlink, valid_steam)):
             result = _find_steam_linux()
             assert result == valid_steam
 
@@ -247,7 +247,7 @@ class TestFindSteamLinux:
         inaccessible_steam.mkdir(parents=True)
 
         valid_steam = tmp_path / "valid_steam"
-        (valid_steam / "steamapps").mkdir()
+        (valid_steam / "steamapps").mkdir(parents=True)  # FIX: parents=True
 
         monkeypatch.setattr(Path, "home", lambda: fake_home)
         monkeypatch.delenv("STEAM_PATH", raising=False)
@@ -263,7 +263,7 @@ class TestFindSteamLinux:
 
         with patch.object(Path, "resolve", mock_resolve):
             with patch("steam_randomizer.steam_locator._LINUX_FALLBACK_PATHS",
-                      (inaccessible_steam, valid_steam)):
+                       (inaccessible_steam, valid_steam)):
                 result = _find_steam_linux()
                 assert result == valid_steam
 
@@ -292,6 +292,12 @@ class TestFindSteamPathIntegration:
         monkeypatch.setattr(Path, "home", lambda: fake_home)
         monkeypatch.delenv("STEAM_PATH", raising=False)
         monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+        # FIX: _LINUX_FALLBACK_PATHS вычисляется при импорте модуля,
+        # поэтому патча Path.home недостаточно — патчим саму константу
+        monkeypatch.setattr(
+            "steam_randomizer.steam_locator._LINUX_FALLBACK_PATHS",
+            (steam_dir,),
+        )
 
         result = find_steam_path()
         assert result == steam_dir
