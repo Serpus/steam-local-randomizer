@@ -1,3 +1,4 @@
+```markdown
 # 🎲 Steam Local Randomizer
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
@@ -27,10 +28,12 @@
 
 ## 📥 Скачать
 
-Скачайте последний `.exe` со страницы [**Releases**](https://github.com/Serpus/steam-local-randomizer/releases):
+Скачайте последнюю версию со страницы [**Releases**](https://github.com/Serpus/steam-local-randomizer/releases):
 
-- **`steam-randomizer-gui.exe`** — обычная версия с окном. Двойной клик — и готово.
-- **`steam-randomizer.exe`** — консольная версия для скриптов и автозапуска.
+### 🪟 Windows
+
+- **`steam-randomizer-gui-windows.exe`** — обычная версия с окном. Двойной клик — и готово.
+- **`steam-randomizer-windows.exe`** — консольная версия для скриптов и автозапуска.
 
 Установка Python и других программ **не требуется** — всё уже внутри.
 
@@ -39,11 +42,36 @@
 > это стандартное поведение для неподписанных `.exe`. Код открыт, вы можете проверить
 > его самостоятельно или собрать `.exe` самому.
 
+### 🐧 Linux
+
+- **`steam-randomizer-gui-linux`** — GUI версия с окном.
+- **`steam-randomizer-linux`** — консольная версия для скриптов.
+
+**Как запустить:**
+
+```bash
+# Сделайте файл исполняемым (только в первый раз)
+chmod +x steam-randomizer-gui-linux
+
+# Запустите
+./steam-randomizer-gui-linux
+```
+
+**Системные требования:**
+
+- Установленный Steam (из пакетного менеджера дистрибутива, Flatpak или с официального сайта).
+- Для GUI-версии нужен установленный пакет `python3-tk` (обычно уже стоит в системе, если установлен Python с Tkinter):
+  - **Ubuntu / Debian / Mint:** `sudo apt install python3-tk`
+  - **Fedora:** `sudo dnf install python3-tkinter`
+  - **Arch Linux:** `sudo pacman -S tk`
+
+> 💡 Приложение поддерживает установку Steam через **Flatpak** (`com.valvesoftware.Steam`) и стандартную установку в `~/.steam/steam` или `~/.local/share/Steam`.
+
 ## 🚀 Использование
 
 ### GUI (графическое окно)
 
-Запустите `steam-randomizer-gui.exe`. Появится тёмное окно:
+Запустите `steam-randomizer-gui-windows.exe` (Windows) или `./steam-randomizer-gui-linux` (Linux). Появится тёмное окно:
 
 - **🎲 Крутить!** — запустить рулетку: игры быстро перебираются и плавно замедляются до остановки.
 - **▶ Запустить** — запустить выбранную игру.
@@ -53,19 +81,19 @@
 
 В строке статуса видно, сколько игр найдено в библиотеке.
 
-> ℹ️ Названия **неустановленных** игр подгружаются из Steam Store API при первом включении чекбокса и кэшируются на 7 дней в `%APPDATA%\steam-local-randomizer\`. Если интернета нет — приложение **молча** откатывается на локальные данные (манифесты + реестр Windows), игры без названия отображаются как `App <id>`. Никаких ошибок и зависаний.
+> ℹ️ Названия **неустановленных** игр подгружаются из Steam Store API при первом включении чекбокса и кэшируются на 7 дней в `%APPDATA%\steam-local-randomizer\` (Windows) или `~/.config/steam-local-randomizer/` (Linux). Если интернета нет — приложение **молча** откатывается на локальные данные (манифесты + реестр Windows), игры без названия отображаются как `App <id>`. Никаких ошибок и зависаний.
 >
 > 💡 Названия **некоторых** (менее 5%) неустановленных игр могут отображаться как `App <id>` — обычно это удалённые из магазина игры или скрытые сервисные приложения. Для 95%+ библиотеки названия подгружаются корректно.
 
 ### CLI (командная строка)
 
-Для продвинутых пользователей и скриптов — `steam-randomizer.exe`:
+Для продвинутых пользователей и скриптов — `steam-randomizer-windows.exe` (Windows) или `./steam-randomizer-linux` (Linux):
 
 ```
-steam-randomizer.exe                  # выбрать случайную игру
-steam-randomizer.exe --list           # показать список всех установленных игр
-steam-randomizer.exe --include-tools  # включить Proton, SteamVR и т.п. в пул
-steam-randomizer.exe --version        # версия
+steam-randomizer                  # выбрать случайную игру
+steam-randomizer --list           # показать список всех установленных игр
+steam-randomizer --include-tools  # включить Proton, SteamVR и т.п. в пул
+steam-randomizer --version        # версия
 ```
 
 Пример вывода:
@@ -81,7 +109,12 @@ Pool size: 42 games
 
 Приложение работает нативно на любом дистрибутиве Linux и на Steam Deck (SteamOS).
 
-**Способ 1 — из исходников (рекомендуется для Steam Deck):**
+**Способ 1 — готовые бинарники из Releases (самый простой):**
+
+Скачайте `steam-randomizer-gui-linux` или `steam-randomizer-linux` со страницы Releases,
+сделайте исполняемым (`chmod +x`) и запустите. Всё!
+
+**Способ 2 — из исходников (рекомендуется для Steam Deck):**
 
 ```bash
 git clone https://github.com/Serpus/steam-local-randomizer.git
@@ -152,6 +185,58 @@ export STEAM_PATH=/path/to/Steam
 включении чекбокса «Вся библиотека» — чтобы подгрузить названия игр, которых нет на диске.
 Если интернета нет, всё работает без ошибок.
 
+## 🧑‍💻 Сборка из исходников
+
+### Windows
+
+Запустите `build.bat` двойным кликом. Скрипт:
+
+- создаст виртуальное окружение `.venv`,
+- установит все зависимости из `pyproject.toml`,
+- прогонит `pytest`,
+- соберёт два `.exe` в папке `dist/`:
+  - `dist/steam-randomizer-gui.exe`
+  - `dist/steam-randomizer.exe`
+
+### Linux
+
+```bash
+# 1. Установите системные зависимости
+sudo apt install python3-tk patchelf   # Ubuntu / Debian / Mint
+# sudo dnf install python3-tkinter patchelf   # Fedora
+# sudo pacman -S tk patchelf                  # Arch Linux
+
+# 2. Сделайте скрипт исполняемым
+chmod +x build_linux.sh
+
+# 3. Запустите сборку
+./build_linux.sh
+```
+
+Скрипт:
+
+- создаст виртуальное окружение `.venv`,
+- установит все зависимости,
+- прогонит `pytest`,
+- соберёт два исполняемых файла в папке `dist/`:
+  - `dist/steam-randomizer-gui`
+  - `dist/steam-randomizer`
+
+> 💡 `patchelf` нужен PyInstaller для корректной упаковки shared-библиотек (`.so`) в режим `--onefile`.
+> Без него собранный бинарник может не запуститься на системах с другой версией `glibc`.
+
+### CI / Автоматическая сборка
+
+Каждый push тега `v*` запускает GitHub Actions, который:
+
+1. Параллельно собирает билды под **Windows** (`windows-latest`) и **Linux** (`ubuntu-latest`).
+2. Запускает тесты на обеих платформах.
+3. Автоматически создаёт GitHub Release и прикрепляет 4 файла:
+   - `steam-randomizer-gui-windows.exe`
+   - `steam-randomizer-windows.exe`
+   - `steam-randomizer-gui-linux`
+   - `steam-randomizer-linux`
+
 ## 📄 Лицензия
 
 [MIT](LICENSE) — используйте, форкайте, изменяйте как угодно.
@@ -160,3 +245,4 @@ export STEAM_PATH=/path/to/Steam
 
 - [vdf](https://pypi.org/project/vdf/) — парсинг Valve Data Format.
 - [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) — современный GUI для Tkinter.
+```
