@@ -44,7 +44,8 @@ def _make_icon_image(path: Path, size: tuple[int, int], radius: int) -> ctk.CTkI
     if not _PIL_OK:
         return None
     try:
-        img = Image.open(path).convert("RGB")
+        with Image.open(path) as im:
+            img = im.convert("RGB")
         img = img.resize((size[0] * 2, size[1] * 2), Image.Resampling.LANCZOS)
         mask = Image.new("L", img.size, 0)
         ImageDraw.Draw(mask).rounded_rectangle(
@@ -141,8 +142,6 @@ class SteamRandomizerApp(ctk.CTk):
         self.progress.pack(fill="x", padx=22, pady=(6, 0))
         self.progress.start()
 
-        # Иконка игры — над названием. Место зарезервировано, чтобы
-        # интерфейс не прыгал при появлении картинки.
         if _PIL_OK:
             self.result_icon = ctk.CTkLabel(
                 self,
@@ -154,7 +153,6 @@ class SteamRandomizerApp(ctk.CTk):
             self.result_icon.pack(pady=(14, 0))
             self.result_icon.bind("<Button-1>", self._on_result_clicked)
 
-        # Результат — кликабельный: открывает страницу игры в Steam.
         self.result = ctk.CTkLabel(
             self,
             text="Нажмите «Крутить!»",
@@ -191,7 +189,6 @@ class SteamRandomizerApp(ctk.CTk):
         )
         self.roll_launch_btn.pack(side="left", expand=True, fill="x", padx=(6, 0))
 
-        # Версия — только в правом нижнем углу.
         version_label = ctk.CTkLabel(
             self,
             text=f"v{__version__}",
@@ -203,7 +200,6 @@ class SteamRandomizerApp(ctk.CTk):
     # ---- иконки ------------------------------------------------------
 
     def _show_icon(self, appid: str | None, *, allow_fetch: bool) -> None:
-        """Главный поток: показать иконку над названием (мгновенно из кэша)."""
         if not _PIL_OK:
             return
         if appid is None:
@@ -448,8 +444,6 @@ class SteamRandomizerApp(ctk.CTk):
             self._re_enable_controls()
             return
 
-        # Прячем безымянные демо/удалённые записи только если интернет
-        # доступен и остальные названия действительно получены.
         games = hide_unnamed_games(games, online=last_fetch_online())
 
         self._all_owned_games = games
@@ -555,14 +549,17 @@ class SteamRandomizerApp(ctk.CTk):
         title_lbl = ctk.CTkLabel(win, text=base_title, font=("", 14, "bold"))
         title_lbl.pack(pady=(14, 6))
 
+        bar = ctk.CTkFrame(win, fg_color="transparent")
+        bar.pack(fill="x", padx=12, pady=(0, 8))
+
         search_var = ctk.StringVar(value="")
         search = ctk.CTkEntry(
-            win,
+            bar,
             textvariable=search_var,
             placeholder_text="🔍  Поиск по названию или appid…",
             height=34,
         )
-        search.pack(fill="x", padx=12, pady=(0, 8))
+        search.pack(side="left", fill="x", expand=True)
 
         scroll = ctk.CTkScrollableFrame(win)
         scroll.pack(fill="both", expand=True, padx=12, pady=(0, 12))
@@ -597,7 +594,6 @@ class SteamRandomizerApp(ctk.CTk):
                 return
 
             icon_queue: queue.Queue = queue.Queue()
-            enqueued: set[str] = set()
 
             for game in sorted(shown, key=lambda g: g.name.lower()):
                 row = ctk.CTkFrame(scroll, fg_color="transparent")
@@ -606,7 +602,6 @@ class SteamRandomizerApp(ctk.CTk):
                 left = ctk.CTkFrame(row, fg_color="transparent")
                 left.pack(side="left", fill="x", expand=True, padx=(6, 0))
 
-                # Иконка — над названием, как в главном окне.
                 icon_label = ctk.CTkLabel(
                     left,
                     text="🎮" if _PIL_OK else "",
@@ -650,8 +645,9 @@ class SteamRandomizerApp(ctk.CTk):
                     key = (game.appid, _LIST_ICON_SIZE)
                     if key in self._icon_mem:
                         icon_label.configure(image=self._icon_mem[key], text="")
-                    elif game.appid not in enqueued:
-                        enqueued.add(game.appid)
+                    else:
+                        # Каждой строке — своя иконка (appid может повторяться).
+                        # Дедуп одновременных загрузок — внутри fetch_icon.
                         icon_queue.put((game.appid, icon_label))
 
             if _PIL_OK and not icon_queue.empty():
@@ -672,8 +668,13 @@ class SteamRandomizerApp(ctk.CTk):
 
         search.bind("<KeyRelease>", on_key)
         search.bind("<Escape>", lambda _e: (search_var.set(""), render()))
-        win.after(60, search.focus_set)
 
+        # Повторная попытка для иконок, не загрузившихся с первого раза.
+        ctk.CTkButton(
+            bar, text="⟳", width=34, height=34, command=render
+        ).pack(side="right", padx=(6, 0))
+
+        win.after(60, search.focus_set)
         render()
 
     # ---- очистка -----------------------------------------------------

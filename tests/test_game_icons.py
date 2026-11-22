@@ -1,4 +1,4 @@
-"""Offline tests for game_icons: cache, negative cache, appid validation."""
+"""Offline tests for game_icons: cache, negative cache, retries, validation."""
 from __future__ import annotations
 
 import io
@@ -13,6 +13,7 @@ from steam_randomizer import game_icons
 def _isolated_cache(tmp_path, monkeypatch):
     monkeypatch.setenv("APPDATA", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr(game_icons.time, "sleep", lambda _s: None)
 
 
 class _Resp:
@@ -40,6 +41,10 @@ def _patch_urlopen(monkeypatch, handler):
     return calls
 
 
+def _404(url):
+    raise urllib.error.HTTPError(url, 404, "Not Found", None, io.BytesIO(b""))
+
+
 def test_invalid_appid_never_touches_network(monkeypatch):
     calls = _patch_urlopen(monkeypatch, lambda url: _Resp(b"x"))
     for bad in ("", "abc", "../evil", "12;rm", "-1"):
@@ -61,7 +66,7 @@ def test_download_and_cache(monkeypatch):
 def test_fallback_to_capsule(monkeypatch):
     def handler(url):
         if url.endswith("header.jpg"):
-            raise urllib.error.HTTPError(url, 404, "Not Found", None, io.BytesIO(b""))
+            _404(url)
         return _Resp(b"CAPSULE")
 
     calls = _patch_urlopen(monkeypatch, handler)
@@ -70,23 +75,46 @@ def test_fallback_to_capsule(monkeypatch):
     assert len(calls) == 2
 
 
-def test_404_writes_negative_cache(monkeypatch):
-    def handler(url):
-        raise urllib.error.HTTPError(url, 404, "Not Found", None, io.BytesIO(b""))
-
-    calls = _patch_urlopen(monkeypatch, handler)
+def test_404_everywhere_writes_negative_cache(monkeypatch):
+    calls = _patch_urlopen(monkeypatch, _404)
     assert game_icons.fetch_icon("999") is None
-    assert len(calls) == 2
+    assert len(calls) == 2  # первый хост дал 404 на оба файла — второй не пробуем
     assert game_icons.fetch_icon("999") is None
     assert len(calls) == 2
 
 
-def test_network_error_does_not_mark_missing(monkeypatch):
+def test_network_error_retries_and_no_negative_cache(monkeypatch):
     def handler(url):
         raise urllib.error.URLError("offline")
 
     calls = _patch_urlopen(monkeypatch, handler)
     assert game_icons.fetch_icon("570") is None
-    assert len(calls) == 2
+    first = len(calls)
+    assert first >= 2  # были ретраи
     assert game_icons.fetch_icon("570") is None
-    assert len(calls) == 4
+    assert len(calls) > first  # не помечено как missing — пробуем снова
+
+
+def test_403_is_temporary_not_missing(monkeypatch):
+    def handler(url):
+        raise urllib.error.HTTPError(url, 403, "Forbidden", None, io.BytesIO(b""))
+
+    calls = _patch_urlopen(monkeypatch, handler)
+    assert game_icons.fetch_icon("730") is None
+    assert len(calls) >= 2
+    # .miss не создан — при следующем запросе снова полезем в сеть
+    before = len(calls)
+    assert game_icons.fetch_icon("730") is None
+    assert len(calls) > before
+
+
+def test_alternate_host_used_on_error(monkeypatch):
+    def handler(url):
+        if "cloudflare" in url:
+            raise urllib.error.URLError("edge down")
+        return _Resp(b"FROM_AKAMAI")
+
+    calls = _patch_urlopen(monkeypatch, handler)
+    p = game_icons.fetch_icon("10")
+    assert p is not None and p.read_bytes() == b"FROM_AKAMAI"
+    assert any("akamai" in u for u in calls)
