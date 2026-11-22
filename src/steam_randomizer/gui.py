@@ -11,6 +11,7 @@ from .launcher import launch_game
 from .randomizer import filter_games, pick_random_game
 from .steam_locator import SteamNotFoundError, find_steam_path
 from . import __version__
+from .i18n import plural_ru
 
 # Задержки (мс) между кадрами анимации «рулетки».
 # Начинаем быстро (эффект размытия), затем плавно замедляемся до полной остановки.
@@ -127,7 +128,10 @@ class SteamRandomizerApp(ctk.CTk):
             self._set_error("В библиотеке не найдено ни одной установленной игры.")
             return
 
-        self.status.configure(text=f"{len(self.games)} игр в библиотеке")
+        count = len(self.games)
+        self.status.configure(
+            text=f"{count} {plural_ru(count, 'игра', 'игры', 'игр')} в библиотеке"
+        )
         self.show_all_btn.configure(state="normal")
 
     def _set_error(self, message: str) -> None:
@@ -205,9 +209,10 @@ class SteamRandomizerApp(ctk.CTk):
         win.transient(self)
         win.after(10, win.grab_set)
 
+        count = len(self.games)
         ctk.CTkLabel(
             win,
-            text=f"Установлено игр: {len(self.games)}",
+            text=f"Установлено {count} {plural_ru(count, 'игра', 'игры', 'игр')}",
             font=("", 14, "bold"),
         ).pack(pady=(14, 6))
 
