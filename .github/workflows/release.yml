@@ -62,7 +62,7 @@ jobs:
         run: pyinstaller --onefile --console --name steam-randomizer-${{ matrix.os_name }} --paths src --collect-all vdf run.py
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ matrix.os_name }}
           path: |
