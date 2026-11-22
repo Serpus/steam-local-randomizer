@@ -1,4 +1,3 @@
-```markdown
 # 🎲 Steam Local Randomizer
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
@@ -245,4 +244,3 @@ chmod +x build_linux.sh
 
 - [vdf](https://pypi.org/project/vdf/) — парсинг Valve Data Format.
 - [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) — современный GUI для Tkinter.
-```
