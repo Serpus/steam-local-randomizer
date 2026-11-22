@@ -31,11 +31,36 @@ SEMVER_RE = re.compile(r'^(\d+)\.(\d+)\.(\d+)$')
 
 # ----------------------------------------------------------------------------- helpers
 
+def _recover_tuple_string(s: str) -> str | None:
+    """Recover '(1, 0, 4)' -> '1.0.4'. Returns None if not applicable."""
+    s = s.strip()
+    if not (s.startswith("(") and s.endswith(")")):
+        return None
+    inner = s[1:-1]
+    parts = [p.strip() for p in inner.split(",")]
+    if len(parts) == 3 and all(p.isdigit() for p in parts):
+        return ".".join(parts)
+    return None
+
+
 def read_current_version() -> str:
-    m = VERSION_DEF_RE.search(INIT_FILE.read_text(encoding="utf-8"))
+    text = INIT_FILE.read_text(encoding="utf-8")
+    m = VERSION_DEF_RE.search(text)
     if not m:
         raise RuntimeError(f"__version__ not found in {INIT_FILE}")
-    return m.group(1)
+    raw = m.group(1)
+
+    recovered = _recover_tuple_string(raw)
+    if recovered is not None:
+        # Auto-fix the file so this doesn't keep happening.
+        new_text = VERSION_REPLACE_RE.subn(
+            lambda mm: f"{mm.group(1)}{recovered}{mm.group(3)}",
+            text, count=1,
+        )[0]
+        INIT_FILE.write_text(new_text, encoding="utf-8")
+        return recovered
+
+    return raw
 
 
 def parse_semver(s: str) -> tuple[int, int, int]:
@@ -70,7 +95,15 @@ def _apply_version_to_init(text: str, new_version: str) -> str:
 def _apply_version_to_readme(text: str, new_version: str) -> tuple[str, bool]:
     if not isinstance(new_version, str) or not SEMVER_RE.fullmatch(new_version):
         raise ValueError(f"invalid new_version: {new_version!r}")
+    # Normal case
     new_text, n = BADGE_RE.subn(rf"\g<1>{new_version}\g<2>", text, count=1)
+    BADGE_CORRUPT_RE = re.compile(
+        r'(shields\.io/badge/version-)\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)(-blue)'
+    )
+    if n > 0:
+        return new_text, True
+    # Recovery from corrupt badge like  version-(1, 0, 4)-blue
+    new_text, n = BADGE_CORRUPT_RE.subn(rf"\g<1>{new_version}\g<2>", text, count=1)
     return new_text, n > 0
 
 
