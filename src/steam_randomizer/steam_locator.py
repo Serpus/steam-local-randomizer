@@ -1,39 +1,37 @@
-"""Locate the Steam installation on Windows, Linux and SteamOS (Steam Deck)."""
+"""Locate the Steam installation (Windows / Linux / SteamOS)."""
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
-
 
 class SteamNotFoundError(Exception):
     """Raised when Steam cannot be located on the system."""
 
+def find_steam_path() -> Path:
+    """Return the Steam root directory.
 
-# Fallback paths if the registry key is missing (Windows).
-_FALLBACK_PATHS = (
-    Path(r"C:\Program Files (x86)\Steam"),
-    Path(r"C:\Program Files\Steam"),
-)
+    Windows:
+      Reads `SteamPath` from the registry. Falls back to common install locations.
 
-# Common native-Linux install locations, including Flatpak and Steam Deck.
-_LINUX_FALLBACK_PATHS = (
-    Path.home() / ".steam" / "root",          # modern Ubuntu/Fedora/Deck layout
-    Path.home() / ".local" / "share" / "Steam",  # older ~/.steam symlink target
-    Path.home() / ".steam" / "steam",         # legacy symlink layout
-    Path("/home/deck/.local/share/Steam"),    # Steam Deck (if run as another user)
-    Path.home() / ".var" / "app" / "com.valvesoftware.Steam" / "data" / ".steam" / "root",
-    Path.home() / ".var" / "app" / "com.valvesoftware.Steam" / ".steam" / "root",
-    Path.home() / ".var" / "app" / "com.valvesoftware.Steam" / "data" / ".local" / "share" / "Steam",
-    Path("/var/lib/flatpak/app/com.valvesoftware.Steam/current/active/files/data/.steam/root"),
-)
+    Linux / SteamOS:
+      Checks standard locations in this order:
+        1. ~/.steam/steam (symlink to actual install)
+        2. ~/.local/share/Steam
+        3. ~/.var/app/com.valvesoftware.Steam/.steam/steam (Flatpak)
+        4. /usr/share/steam (system-wide)
 
+    Raises:
+        SteamNotFoundError: if no valid Steam installation is found.
+    """
+    if sys.platform == "win32":
+        return _find_steam_windows()
+    else:
+        return _find_steam_linux()
 
-def _find_steam_path_windows() -> Path:
-    """Windows: read ``SteamPath`` from the registry, fall back to defaults."""
+def _find_steam_windows() -> Path:
+    """Windows-specific Steam detection using registry."""
     try:
         import winreg
-
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
             steam_path, _ = winreg.QueryValueEx(key, "SteamPath")
             candidate = Path(steam_path)
@@ -46,7 +44,12 @@ def _find_steam_path_windows() -> Path:
     except OSError:
         pass
 
-    for fallback in _FALLBACK_PATHS:
+    # Fallback paths for Windows
+    fallbacks = (
+        Path(r"C:\Program Files (x86)\Steam"),
+        Path(r"C:\Program Files\Steam"),
+    )
+    for fallback in fallbacks:
         if fallback.is_dir():
             return fallback
 
@@ -54,76 +57,31 @@ def _find_steam_path_windows() -> Path:
         "Steam installation not found. Make sure Steam is installed."
     )
 
+def _find_steam_linux() -> Path:
+    """Linux-specific Steam detection using standard paths."""
+    home = Path.home()
 
-def _looks_like_steam(path: Path) -> bool:
-    """Heuristic check that *path* is a real Steam root directory."""
-    if not path.is_dir():
-        return False
-    if (path / "steamapps").is_dir():
-        return True
-    if (path / "steam.exe").is_file() or (path / "ubuntu12_64" / "steam").is_file():
-        return True
-    if (path / "libraryfolders.vdf").is_file():
-        return True
-    if (path / "config" / "libraryfolders.vdf").is_file():
-        return True
-    return False
+    # List of standard Steam locations on Linux (in order of preference)
+    candidates = [
+        home / ".steam" / "steam",  # Symlink to actual install
+        home / ".local" / "share" / "Steam",  # Standard XDG location
+        home / ".var" / "app" / "com.valvesoftware.Steam" / ".steam" / "steam",  # Flatpak
+        Path("/usr/share/steam"),  # System-wide (Arch, some distros)
+    ]
 
+    # Also check XDG_DATA_HOME if set
+    xdg_data = sys.modules.get("os", __import__("os")).environ.get("XDG_DATA_HOME")
+    if xdg_data:
+        candidates.insert(1, Path(xdg_data) / "Steam")
 
-def _find_steam_path_linux() -> Path:
-    """Linux / SteamOS: check env override and common install locations.
-
-    Resolution order:
-      1. ``STEAM_PATH`` environment variable (handy for custom mounts).
-      2. ``~/.steam/root`` and other well-known directories.
-      3. ``~/.steam/sdk64/steam.cfg``-style markers are ignored; instead we
-         look for any ``.steam*`` folder in $HOME containing ``steamapps``.
-    """
-    env_path = os.environ.get("STEAM_PATH")
-    if env_path:
-        candidate = Path(env_path).expanduser()
+    for candidate in candidates:
+        # Resolve symlinks and check if it's a valid directory
         if candidate.is_dir():
-            return candidate
-
-    checked: set[Path] = set()
-    for fallback in _LINUX_FALLBACK_PATHS:
-        if fallback in checked:
-            continue
-        checked.add(fallback)
-        if _looks_like_steam(fallback):
-            return fallback
-
-    # Last resort: scan the home directory for hidden .steam* folders.
-    try:
-        home = Path.home()
-        for entry in sorted(home.glob(".steam*")):
-            resolved = entry.resolve()
-            if resolved in checked:
-                continue
-            checked.add(resolved)
-            if _looks_like_steam(entry):
-                return entry
-    except OSError:
-        pass
+            # Check if steamapps exists (validates it's actually Steam)
+            if (candidate / "steamapps").is_dir() or (candidate / "SteamApps").is_dir():
+                return candidate.resolve()
 
     raise SteamNotFoundError(
-        "Steam installation not found. Make sure Steam is installed.\n"
-        "You can also set the STEAM_PATH environment variable to your "
-        "Steam folder (e.g. ~/.steam/root or the Flatpak data dir)."
+        "Steam installation not found. Install Steam from your package manager "
+        "or from https://store.steampowered.com/about/"
     )
-
-
-def find_steam_path() -> Path:
-    """Return the Steam root directory on the current platform.
-
-    Raises:
-        SteamNotFoundError: if no valid Steam installation is found.
-    """
-    if sys.platform == "win32":
-        return _find_steam_path_windows()
-    if sys.platform == "darwin":
-        candidate = Path.home() / "Library" / "Application Support" / "Steam"
-        if _looks_like_steam(candidate):
-            return candidate
-        raise SteamNotFoundError("Steam installation not found.")
-    return _find_steam_path_linux()
