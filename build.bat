@@ -55,7 +55,7 @@ del /q *.spec >nul 2>&1
 
 REM --- 5. Build GUI ------------------------------------------
 echo [2/3] Building GUI (steam-randomizer-gui.exe)...
-pyinstaller --onefile --windowed --name steam-randomizer-gui --paths src --collect-all vdf --collect-all customtkinter run_gui.py >nul
+pyinstaller --onefile --windowed --name steam-randomizer-gui --paths src --collect-all vdf --collect-all customtkinter run_gui.py
 if errorlevel 1 (
     echo [ERROR] GUI build failed
     goto :fail
@@ -63,7 +63,7 @@ if errorlevel 1 (
 
 REM --- 6. Build CLI ------------------------------------------
 echo [3/3] Building CLI (steam-randomizer.exe)...
-pyinstaller --onefile --console --name steam-randomizer --paths src --collect-all vdf run.py >nul
+pyinstaller --onefile --console --name steam-randomizer --paths src --collect-all vdf run.py
 if errorlevel 1 (
     echo [ERROR] CLI build failed
     goto :fail
