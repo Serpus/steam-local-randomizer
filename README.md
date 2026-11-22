@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/Serpus/steam-local-randomizer/releases)
 [![Build](https://github.com/Serpus/steam-local-randomizer/actions/workflows/release.yml/badge.svg)](https://github.com/Serpus/steam-local-randomizer/actions/workflows/release.yml)
+[![Issues](https://img.shields.io/github/issues/Serpus/steam-local-randomizer)](https://github.com/Serpus/steam-local-randomizer/issues)
 
 Устали думать, во что поиграть? **Steam Local Randomizer** находит установленный Steam,
 сканирует **все** ваши библиотеки (включая игры на других дисках) и выбирает игру за вас.

@@ -26,7 +26,7 @@ class SteamRandomizerApp(ctk.CTk):
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
-        self.title(f"Steam Local Randomizer v{__version__}")
+        self.title(f"Steam Local Randomizer")
         self.geometry("540x420")
         self.minsize(460, 360)
 
@@ -102,10 +102,10 @@ class SteamRandomizerApp(ctk.CTk):
         version_label = ctk.CTkLabel(
             self,
             text=f"v{__version__}",
-            font=("", 10),
+            font=("", 11),
             text_color=("gray50", "gray60"),
         )
-        version_label.pack(side="bottom", anchor="e", padx=10, pady=(0, 4))
+        version_label.pack(side="bottom", anchor="e", padx=14, pady=(0, 6))
 
     # ---- Данные ------------------------------------------------------
 
