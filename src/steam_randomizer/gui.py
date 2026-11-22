@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import random
 import threading
+import webbrowser
 from collections.abc import Callable
 
 import customtkinter as ctk
@@ -16,11 +17,12 @@ from .randomizer import filter_games, pick_random_game
 from .steam_locator import SteamNotFoundError, find_steam_path
 
 
-# Задержки (мс) между кадрами анимации «рулетки».
 _SPIN_DELAYS: tuple[int, ...] = (
     40, 40, 45, 50, 55, 60, 70, 80, 90, 100,
     115, 130, 150, 175, 200, 230, 265, 300, 345, 400, 460, 530,
 )
+
+_STORE_URL = "https://store.steampowered.com/app/{appid}/"
 
 
 class SteamRandomizerApp(ctk.CTk):
@@ -30,19 +32,17 @@ class SteamRandomizerApp(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         self.title("Steam Local Randomizer")
-        self.geometry("560x460")
-        self.minsize(480, 400)
+        self.geometry("560x470")
+        self.minsize(480, 410)
 
-        # --- Данные ---
-        self.games: list[Game] = []               # текущий активный пул
-        self._installed_games: list[Game] = []    # только установленные
-        self._all_owned_games: list[Game] = []    # вся библиотека (кэш)
+        self.games: list[Game] = []
+        self._installed_games: list[Game] = []
+        self._all_owned_games: list[Game] = []
         self._all_owned_loaded = False
         self._use_full_library = False
         self.current_game: Game | None = None
         self.rng = random.Random()
 
-        # --- Состояние UI ---
         self._rolling = False
         self._spin_after_id: str | None = None
         self._on_finish: Callable[[], None] | None = None
@@ -78,7 +78,6 @@ class SteamRandomizerApp(ctk.CTk):
         )
         self.show_all_btn.pack(side="right")
 
-        # Чекбокс «Вся библиотека» — строка под header, чтобы не сжимать кнопку.
         options_row = ctk.CTkFrame(self, fg_color="transparent")
         options_row.pack(fill="x", padx=22, pady=(4, 0))
 
@@ -96,12 +95,11 @@ class SteamRandomizerApp(ctk.CTk):
         )
         self.full_library_check.pack(side="left")
 
-        # Индикатор загрузки.
         self.progress = ctk.CTkProgressBar(self, mode="indeterminate", height=4)
         self.progress.pack(fill="x", padx=22, pady=(6, 0))
         self.progress.start()
 
-        # Результат.
+        # Результат — кликабельный: открывает страницу игры в Steam.
         self.result = ctk.CTkLabel(
             self,
             text="Нажмите «Крутить!»",
@@ -110,8 +108,8 @@ class SteamRandomizerApp(ctk.CTk):
             justify="center",
         )
         self.result.pack(pady=28, expand=True)
+        self.result.bind("<Button-1>", self._on_result_clicked)
 
-        # Кнопка рулетки.
         self.roll_btn = ctk.CTkButton(
             self,
             text="🎲  Крутить!",
@@ -122,7 +120,6 @@ class SteamRandomizerApp(ctk.CTk):
         )
         self.roll_btn.pack(fill="x", padx=22, pady=(0, 10))
 
-        # Нижний ряд.
         row = ctk.CTkFrame(self, fg_color="transparent")
         row.pack(fill="x", padx=22, pady=(0, 18))
 
@@ -139,7 +136,7 @@ class SteamRandomizerApp(ctk.CTk):
         )
         self.roll_launch_btn.pack(side="left", expand=True, fill="x", padx=(6, 0))
 
-        # Версия в правом нижнем углу.
+        # Версия — только в правом нижнем углу.
         version_label = ctk.CTkLabel(
             self,
             text=f"v{__version__}",
@@ -147,6 +144,19 @@ class SteamRandomizerApp(ctk.CTk):
             text_color=("gray50", "gray60"),
         )
         version_label.pack(side="bottom", anchor="e", padx=14, pady=(0, 6))
+
+    # ---- открытие страницы игры в Steam -----------------------------
+
+    def _on_result_clicked(self, _event=None) -> None:
+        if self.current_game is not None:
+            self._open_store_page(self.current_game)
+
+    def _open_store_page(self, game: Game) -> None:
+        url = _STORE_URL.format(appid=game.appid)
+        try:
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001
+            pass
 
     # ---- загрузка ----------------------------------------------------
 
@@ -187,7 +197,6 @@ class SteamRandomizerApp(ctk.CTk):
             pass
 
     def _load_games_bg(self) -> None:
-        """Работает в фоновом потоке — не трогает tkinter напрямую."""
         try:
             steam_path = find_steam_path()
             all_games = find_installed_games(steam_path)
@@ -207,7 +216,6 @@ class SteamRandomizerApp(ctk.CTk):
                 func(*args)
             except Exception:
                 pass
-
         try:
             self.after(0, wrapper)
         except Exception:
@@ -229,7 +237,6 @@ class SteamRandomizerApp(ctk.CTk):
             return
 
         self._apply_pool(self._installed_games)
-
         self.show_all_btn.configure(state="normal")
         self.roll_btn.configure(state="normal")
         self.roll_launch_btn.configure(state="normal")
@@ -242,10 +249,11 @@ class SteamRandomizerApp(ctk.CTk):
         suffix = " (вся библиотека)" if self._use_full_library else ""
         self.status.configure(text=f"{count} {word} в библиотеке{suffix}")
 
-        # Сбрасываем текущий выбор — иначе запуск уведёт в несуществующую игру.
         self.current_game = None
         self.result.configure(
-            text="Нажмите «Крутить!»", text_color=("gray10", "gray95")
+            text="Нажмите «Крутить!»",
+            text_color=("gray10", "gray95"),
+            cursor="arrow",
         )
         self.launch_btn.configure(state="disabled")
 
@@ -253,7 +261,6 @@ class SteamRandomizerApp(ctk.CTk):
 
     def _on_full_library_toggle(self) -> None:
         if self._rolling or self._loading:
-            # Пока крутится рулетка или идёт загрузка — не переключаем.
             self.full_library_var.set(self._use_full_library)
             return
 
@@ -274,7 +281,6 @@ class SteamRandomizerApp(ctk.CTk):
         self.show_all_btn.configure(state="disabled")
 
         self._start_loading("Загружаем полную библиотеку Steam")
-
         threading.Thread(target=self._load_full_library_bg, daemon=True).start()
 
     def _load_full_library_bg(self) -> None:
@@ -286,7 +292,7 @@ class SteamRandomizerApp(ctk.CTk):
             self._safe_after(self._on_full_library_loaded, None, str(exc))
 
     def _on_full_library_loaded(
-            self, games: list[Game] | None, error: str | None
+        self, games: list[Game] | None, error: str | None
     ) -> None:
         self._stop_loading()
 
@@ -301,8 +307,6 @@ class SteamRandomizerApp(ctk.CTk):
         assert games is not None
 
         if not games:
-            # НЕ кэшируем пустой результат — пользователь может исправить
-            # ситуацию (обновить Steam, войти в аккаунт) и попробовать снова.
             self.status.configure(
                 text="Не удалось получить список всех игр "
                      "(нет localconfig.vdf или appinfo.vdf)."
@@ -325,7 +329,7 @@ class SteamRandomizerApp(ctk.CTk):
             self.roll_launch_btn.configure(state="normal")
             self.show_all_btn.configure(state="normal")
 
-    # ---- анимация рулетки --------------------------------------------
+    # ---- рулетка ----------------------------------------------------
 
     def _roll(self, on_finish: Callable[[], None] | None = None) -> None:
         if self._rolling or self._loading or not self.games:
@@ -339,7 +343,7 @@ class SteamRandomizerApp(ctk.CTk):
         self.roll_launch_btn.configure(state="disabled")
         self.launch_btn.configure(state="disabled")
         self.full_library_check.configure(state="disabled")
-        self.result.configure(text_color=("gray30", "gray60"))
+        self.result.configure(text_color=("gray30", "gray60"), cursor="arrow")
 
         self._spin(step=0)
 
@@ -350,7 +354,9 @@ class SteamRandomizerApp(ctk.CTk):
             if game is not None:
                 self.current_game = game
                 self.result.configure(
-                    text=game.name, text_color=("gray10", "gray95")
+                    text=game.name,
+                    text_color=("gray10", "gray95"),
+                    cursor="hand2",
                 )
             self._finish_roll()
             return
@@ -382,15 +388,17 @@ class SteamRandomizerApp(ctk.CTk):
     def _roll_and_launch(self) -> None:
         self._roll(on_finish=self._launch)
 
-    # ---- окно «Все игры» ---------------------------------------------
+    # ---- окно «Все игры» --------------------------------------------
 
     def _show_all_games(self) -> None:
         if not self.games:
             return
 
         win = ctk.CTkToplevel(self)
-        win.title("Все установленные игры" if not self._use_full_library else "Вся библиотека")
-        win.geometry("460x620")
+        win.title(
+            "Вся библиотека" if self._use_full_library else "Все установленные игры"
+        )
+        win.geometry("480x620")
         win.minsize(380, 420)
         win.transient(self)
         win.after(10, win.grab_set)
@@ -416,13 +424,18 @@ class SteamRandomizerApp(ctk.CTk):
             if self._use_full_library and game.appid not in installed_ids:
                 label_text += "   ·  не установлена"
 
-            ctk.CTkLabel(
+            name_label = ctk.CTkLabel(
                 row,
                 text=label_text,
                 anchor="w",
                 justify="left",
                 wraplength=340,
-            ).pack(side="left", fill="x", expand=True, padx=(6, 0))
+                cursor="hand2",
+            )
+            name_label.pack(side="left", fill="x", expand=True, padx=(6, 0))
+            name_label.bind(
+                "<Button-1>", lambda _e, g=game: self._open_store_page(g)
+            )
 
             ctk.CTkButton(
                 row,
