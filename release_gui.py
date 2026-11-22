@@ -57,6 +57,8 @@ def compute_next(current: str, bump: str) -> str:
 
 
 def _apply_version_to_init(text: str, new_version: str) -> str:
+    if not isinstance(new_version, str) or not SEMVER_RE.fullmatch(new_version):
+        raise ValueError(f"invalid new_version: {new_version!r}")
     new_text, n = VERSION_REPLACE_RE.subn(
         lambda m: f"{m.group(1)}{new_version}{m.group(3)}", text, count=1
     )
@@ -66,6 +68,8 @@ def _apply_version_to_init(text: str, new_version: str) -> str:
 
 
 def _apply_version_to_readme(text: str, new_version: str) -> tuple[str, bool]:
+    if not isinstance(new_version, str) or not SEMVER_RE.fullmatch(new_version):
+        raise ValueError(f"invalid new_version: {new_version!r}")
     new_text, n = BADGE_RE.subn(rf"\g<1>{new_version}\g<2>", text, count=1)
     return new_text, n > 0
 
@@ -397,7 +401,7 @@ class ReleaseDialog(tk.Tk):
 
         threading.Thread(
             target=self._prepare_bg,
-            args=(new, tag),
+            args=(v, tag),
             daemon=True,
         ).start()
 
