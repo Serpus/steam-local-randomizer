@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.5-blue)](https://github.com/Serpus/steam-local-randomizer/releases)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue)](https://github.com/Serpus/steam-local-randomizer/releases)
 [![Build](https://github.com/Serpus/steam-local-randomizer/actions/workflows/release.yml/badge.svg)](https://github.com/Serpus/steam-local-randomizer/actions/workflows/release.yml)
 [![Issues](https://img.shields.io/github/issues/Serpus/steam-local-randomizer)](https://github.com/Serpus/steam-local-randomizer/issues)
 [![Скриншот Steam Local Randomizer](docs/screenshot.png)](docs/screenshot.png)

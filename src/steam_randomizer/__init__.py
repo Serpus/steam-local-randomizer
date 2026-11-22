@@ -1,3 +1,3 @@
 """Steam Local Randomizer — pick a random game from your installed Steam library."""
 
-__version__ = "1.0.5"
+__version__ = "1.1.0"
