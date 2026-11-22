@@ -5,6 +5,12 @@ import os
 import sys
 from pathlib import Path
 
+# Условный импорт winreg для Windows
+try:
+    import winreg
+except ImportError:
+    winreg = None  # type: ignore[assignment]
+
 class SteamNotFoundError(Exception):
     """Raised when Steam cannot be located on the system."""
 
@@ -68,19 +74,17 @@ def find_steam_path() -> Path:
 
 def _find_steam_windows() -> Path:
     """Windows-specific Steam detection using registry."""
-    try:
-        import winreg
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
-            steam_path, _ = winreg.QueryValueEx(key, "SteamPath")
-            candidate = Path(steam_path)
-            if candidate.is_dir():
-                return candidate
-    except ImportError:
-        pass
-    except FileNotFoundError:
-        pass
-    except OSError:
-        pass
+    if winreg is not None:
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
+                steam_path, _ = winreg.QueryValueEx(key, "SteamPath")
+                candidate = Path(steam_path)
+                if candidate.is_dir():
+                    return candidate
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
 
     # Fallback paths for Windows
     for fallback in _FALLBACK_PATHS_WINDOWS:

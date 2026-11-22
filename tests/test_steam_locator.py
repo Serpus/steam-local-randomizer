@@ -33,8 +33,9 @@ class TestLooksLikeSteam:
         (tmp_path / "SteamApps").mkdir()
         assert _looks_like_steam(tmp_path)
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows NTFS is case-insensitive")
     def test_with_both_variants(self, tmp_path):
-        """Directory with both steamapps and SteamApps is valid."""
+        """Directory with both steamapps and SteamApps is valid (Linux/macOS only)."""
         (tmp_path / "steamapps").mkdir()
         (tmp_path / "SteamApps").mkdir()
         assert _looks_like_steam(tmp_path)
@@ -58,11 +59,12 @@ class TestFindSteamPath:
     def test_env_override_takes_precedence(self, tmp_path, monkeypatch):
         """STEAM_PATH environment variable overrides all other detection."""
         steam_dir = tmp_path / "custom_steam"
+        steam_dir.mkdir()  # Сначала создаём родителя
         (steam_dir / "steamapps").mkdir()
 
         monkeypatch.setenv("STEAM_PATH", str(steam_dir))
 
-        # Even if we mock everything else, env var should win
+        # Даже если мы замокаем всё остальное, переменная окружения должна победить
         result = find_steam_path()
         assert result == steam_dir
 
@@ -70,10 +72,14 @@ class TestFindSteamPath:
         """Non-existent STEAM_PATH is ignored and falls through to normal detection."""
         monkeypatch.setenv("STEAM_PATH", str(tmp_path / "nonexistent"))
 
-        # Should raise SteamNotFoundError since path doesn't exist
-        # and we haven't set up any valid Steam paths
-        with pytest.raises(SteamNotFoundError):
-            find_steam_path()
+        # Мокаем платформо-специфичные функции, чтобы они ничего не нашли
+        with patch("steam_randomizer.steam_locator._find_steam_windows") as mock_win, \
+             patch("steam_randomizer.steam_locator._find_steam_linux") as mock_linux:
+            mock_win.side_effect = SteamNotFoundError("Not found")
+            mock_linux.side_effect = SteamNotFoundError("Not found")
+
+            with pytest.raises(SteamNotFoundError):
+                find_steam_path()
 
 
 class TestFindSteamWindows:
@@ -89,6 +95,7 @@ class TestFindSteamWindows:
             mock_key = MagicMock()
             mock_winreg.OpenKey.return_value.__enter__.return_value = mock_key
             mock_winreg.QueryValueEx.return_value = (str(steam_dir), None)
+            mock_winreg.HKEY_CURRENT_USER = 0x80000001
 
             result = _find_steam_windows()
             assert result == steam_dir
@@ -101,10 +108,11 @@ class TestFindSteamWindows:
 
         with patch("steam_randomizer.steam_locator.winreg") as mock_winreg:
             mock_winreg.OpenKey.side_effect = FileNotFoundError()
+            mock_winreg.HKEY_CURRENT_USER = 0x80000001
 
-            # Patch _FALLBACK_PATHS_WINDOWS to use our test path
+            # Патчим _FALLBACK_PATHS_WINDOWS, чтобы использовать наш тестовый путь
             with patch("steam_randomizer.steam_locator._FALLBACK_PATHS_WINDOWS",
-                       (steam_dir,)):
+                      (steam_dir,)):
                 result = _find_steam_windows()
                 assert result == steam_dir
 
@@ -113,10 +121,11 @@ class TestFindSteamWindows:
         """Raises SteamNotFoundError when Steam cannot be found."""
         with patch("steam_randomizer.steam_locator.winreg") as mock_winreg:
             mock_winreg.OpenKey.side_effect = FileNotFoundError()
+            mock_winreg.HKEY_CURRENT_USER = 0x80000001
 
-            # Patch fallback paths to non-existent directories
+            # Патчим fallback пути на несуществующие директории
             with patch("steam_randomizer.steam_locator._FALLBACK_PATHS_WINDOWS",
-                       (tmp_path / "nonexistent1", tmp_path / "nonexistent2")):
+                      (tmp_path / "nonexistent1", tmp_path / "nonexistent2")):
                 with pytest.raises(SteamNotFoundError):
                     _find_steam_windows()
 
@@ -135,9 +144,9 @@ class TestFindSteamLinux:
         monkeypatch.delenv("STEAM_PATH", raising=False)
         monkeypatch.delenv("XDG_DATA_HOME", raising=False)
 
-        # Patch _LINUX_FALLBACK_PATHS to use our test path
+        # Патчим _LINUX_FALLBACK_PATHS, чтобы использовать наш тестовый путь
         with patch("steam_randomizer.steam_locator._LINUX_FALLBACK_PATHS",
-                   (steam_dir,)):
+                  (steam_dir,)):
             result = _find_steam_linux()
             assert result == steam_dir
 
@@ -146,7 +155,7 @@ class TestFindSteamLinux:
         """Flatpak Steam installation is detected."""
         fake_home = tmp_path / "home"
         flatpak_steam = (fake_home / ".var" / "app" / "com.valvesoftware.Steam" /
-                         ".steam" / "steam")
+                        ".steam" / "steam")
         (flatpak_steam / "steamapps").mkdir(parents=True)
 
         monkeypatch.setattr(Path, "home", lambda: fake_home)
@@ -154,7 +163,7 @@ class TestFindSteamLinux:
         monkeypatch.delenv("XDG_DATA_HOME", raising=False)
 
         with patch("steam_randomizer.steam_locator._LINUX_FALLBACK_PATHS",
-                   (flatpak_steam,)):
+                  (flatpak_steam,)):
             result = _find_steam_linux()
             assert result == flatpak_steam
 
@@ -167,7 +176,7 @@ class TestFindSteamLinux:
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "custom_xdg"))
         monkeypatch.delenv("STEAM_PATH", raising=False)
 
-        # XDG path should be inserted at position 2
+        # XDG путь должен быть вставлен на позицию 2
         result = _find_steam_linux()
         assert result == xdg_steam
 
@@ -187,9 +196,9 @@ class TestFindSteamLinux:
         monkeypatch.delenv("XDG_DATA_HOME", raising=False)
 
         with patch("steam_randomizer.steam_locator._LINUX_FALLBACK_PATHS",
-                   (symlink_steam,)):
+                  (symlink_steam,)):
             result = _find_steam_linux()
-            # Should return resolved path
+            # Должен вернуть разрешённый путь
             assert result == actual_steam.resolve()
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Linux-only test")
@@ -200,7 +209,7 @@ class TestFindSteamLinux:
         broken_symlink.parent.mkdir(parents=True)
         broken_symlink.symlink_to(tmp_path / "nonexistent")
 
-        # Add a valid fallback
+        # Добавляем валидный fallback
         valid_steam = tmp_path / "valid_steam"
         (valid_steam / "steamapps").mkdir()
 
@@ -209,7 +218,7 @@ class TestFindSteamLinux:
         monkeypatch.delenv("XDG_DATA_HOME", raising=False)
 
         with patch("steam_randomizer.steam_locator._LINUX_FALLBACK_PATHS",
-                   (broken_symlink, valid_steam)):
+                  (broken_symlink, valid_steam)):
             result = _find_steam_linux()
             assert result == valid_steam
 
@@ -244,7 +253,7 @@ class TestFindSteamLinux:
         monkeypatch.delenv("STEAM_PATH", raising=False)
         monkeypatch.delenv("XDG_DATA_HOME", raising=False)
 
-        # Mock resolve to raise PermissionError
+        # Мокаем resolve, чтобы выбрасывать PermissionError
         original_resolve = Path.resolve
 
         def mock_resolve(self, strict=False):
@@ -254,7 +263,7 @@ class TestFindSteamLinux:
 
         with patch.object(Path, "resolve", mock_resolve):
             with patch("steam_randomizer.steam_locator._LINUX_FALLBACK_PATHS",
-                       (inaccessible_steam, valid_steam)):
+                      (inaccessible_steam, valid_steam)):
                 result = _find_steam_linux()
                 assert result == valid_steam
 
@@ -265,6 +274,7 @@ class TestFindSteamPathIntegration:
     def test_platform_detection(self, monkeypatch, tmp_path):
         """Correct platform-specific function is called."""
         steam_dir = tmp_path / "steam"
+        steam_dir.mkdir()  # Сначала создаём родителя
         (steam_dir / "steamapps").mkdir()
 
         monkeypatch.setenv("STEAM_PATH", str(steam_dir))
@@ -290,14 +300,16 @@ class TestFindSteamPathIntegration:
     def test_full_windows_detection_chain(self, tmp_path, monkeypatch):
         """Full detection chain works on Windows."""
         steam_dir = tmp_path / "Steam"
+        steam_dir.mkdir()  # Сначала создаём родителя
         (steam_dir / "steamapps").mkdir()
 
         monkeypatch.delenv("STEAM_PATH", raising=False)
 
         with patch("steam_randomizer.steam_locator.winreg") as mock_winreg:
             mock_winreg.OpenKey.side_effect = FileNotFoundError()
+            mock_winreg.HKEY_CURRENT_USER = 0x80000001
 
             with patch("steam_randomizer.steam_locator._FALLBACK_PATHS_WINDOWS",
-                       (steam_dir,)):
+                      (steam_dir,)):
                 result = find_steam_path()
                 assert result == steam_dir
