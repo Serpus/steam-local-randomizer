@@ -6,8 +6,8 @@
 [![Version](https://img.shields.io/badge/version-1.1.0-blue)](https://github.com/Serpus/steam-local-randomizer/releases)
 [![Build](https://github.com/Serpus/steam-local-randomizer/actions/workflows/release.yml/badge.svg)](https://github.com/Serpus/steam-local-randomizer/actions/workflows/release.yml)
 [![Issues](https://img.shields.io/github/issues/Serpus/steam-local-randomizer)](https://github.com/Serpus/steam-local-randomizer/issues)
-[![Скриншот Steam Local Randomizer](docs/screenshot.png)](docs/screenshot.png)
 [![Tests](https://github.com/Serpus/steam-local-randomizer/actions/workflows/tests.yml/badge.svg)](https://github.com/Serpus/steam-local-randomizer/actions/workflows/tests.yml)
+[![Скриншот Steam Local Randomizer](docs/screenshot.png)](docs/screenshot.png)
 
 Устали думать, во что поиграть? **Steam Local Randomizer** находит установленный Steam,
 сканирует **все** ваши библиотеки и выбирает игру за вас. Никаких Steam API-ключей,
