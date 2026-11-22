@@ -9,6 +9,7 @@ dynamic = ["version"]
 dependencies = [
     "vdf>=3.4",
     "customtkinter>=5.2",
+    "pillow>=10.0",
 ]
 
 [project.optional-dependencies]

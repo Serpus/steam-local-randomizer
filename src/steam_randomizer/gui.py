@@ -1,21 +1,31 @@
 """CustomTkinter GUI for steam-local-randomizer."""
 from __future__ import annotations
 
+import queue
 import random
 import threading
 import webbrowser
 from collections.abc import Callable
+from pathlib import Path
 
 import customtkinter as ctk
 
+try:
+    from PIL import Image, ImageDraw
+    _PIL_OK = True
+except ImportError:  # Pillow не установлен — иконки отключены, приложение работает
+    _PIL_OK = False
+
 from . import __version__
 from .full_library import find_all_owned_games
+from .game_filter import hide_unnamed_games
+from .game_icons import cached_icon, fetch_icon
 from .i18n import plural_ru
 from .library_parser import Game, find_installed_games
 from .launcher import launch_game
 from .randomizer import filter_games, pick_random_game
+from .steam_api import last_fetch_online
 from .steam_locator import SteamNotFoundError, find_steam_path
-
 
 _SPIN_DELAYS: tuple[int, ...] = (
     40, 40, 45, 50, 55, 60, 70, 80, 90, 100,
@@ -23,6 +33,35 @@ _SPIN_DELAYS: tuple[int, ...] = (
 )
 
 _STORE_URL = "https://store.steampowered.com/app/{appid}/"
+
+_RESULT_ICON_SIZE = (320, 150)
+_LIST_ICON_SIZE = (112, 52)
+_ICON_WORKERS = 3
+
+
+def _make_icon_image(path: Path, size: tuple[int, int], radius: int) -> ctk.CTkImage | None:
+    """jpg -> скруглённый CTkImage (2x для HiDPI). Только главный поток Tk."""
+    if not _PIL_OK:
+        return None
+    try:
+        img = Image.open(path).convert("RGB")
+        img = img.resize((size[0] * 2, size[1] * 2), Image.Resampling.LANCZOS)
+        mask = Image.new("L", img.size, 0)
+        ImageDraw.Draw(mask).rounded_rectangle(
+            (0, 0, img.size[0] - 1, img.size[1] - 1), radius=radius * 2, fill=255
+        )
+        img.putalpha(mask)
+        return ctk.CTkImage(light_image=img, dark_image=img, size=size)
+    except Exception:
+        return None
+
+
+def _game_matches(game: Game, query: str) -> bool:
+    """Поиск по подстроке названия (без регистра) или по appid."""
+    q = query.strip().lower()
+    if not q:
+        return True
+    return q in game.name.lower() or q in game.appid
 
 
 class SteamRandomizerApp(ctk.CTk):
@@ -32,8 +71,8 @@ class SteamRandomizerApp(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         self.title("Steam Local Randomizer")
-        self.geometry("560x470")
-        self.minsize(480, 410)
+        self.geometry("560x620")
+        self.minsize(500, 560)
 
         self.games: list[Game] = []
         self._installed_games: list[Game] = []
@@ -50,6 +89,9 @@ class SteamRandomizerApp(ctk.CTk):
         self._loading = True
         self._loading_after_id: str | None = None
         self._loading_base_msg = "Ищем библиотеку Steam"
+
+        self._icon_mem: dict[tuple[str, tuple[int, int]], ctk.CTkImage] = {}
+        self._icon_req = 0
 
         self._build_ui()
         self.after(50, self._start_initial_loading)
@@ -99,6 +141,19 @@ class SteamRandomizerApp(ctk.CTk):
         self.progress.pack(fill="x", padx=22, pady=(6, 0))
         self.progress.start()
 
+        # Иконка игры — над названием. Место зарезервировано, чтобы
+        # интерфейс не прыгал при появлении картинки.
+        if _PIL_OK:
+            self.result_icon = ctk.CTkLabel(
+                self,
+                text="🎮",
+                font=("", 44),
+                text_color=("gray60", "gray35"),
+                height=_RESULT_ICON_SIZE[1],
+            )
+            self.result_icon.pack(pady=(14, 0))
+            self.result_icon.bind("<Button-1>", self._on_result_clicked)
+
         # Результат — кликабельный: открывает страницу игры в Steam.
         self.result = ctk.CTkLabel(
             self,
@@ -107,7 +162,7 @@ class SteamRandomizerApp(ctk.CTk):
             wraplength=500,
             justify="center",
         )
-        self.result.pack(pady=28, expand=True)
+        self.result.pack(pady=(10, 18), expand=True)
         self.result.bind("<Button-1>", self._on_result_clicked)
 
         self.roll_btn = ctk.CTkButton(
@@ -144,6 +199,81 @@ class SteamRandomizerApp(ctk.CTk):
             text_color=("gray50", "gray60"),
         )
         version_label.pack(side="bottom", anchor="e", padx=14, pady=(0, 6))
+
+    # ---- иконки ------------------------------------------------------
+
+    def _show_icon(self, appid: str | None, *, allow_fetch: bool) -> None:
+        """Главный поток: показать иконку над названием (мгновенно из кэша)."""
+        if not _PIL_OK:
+            return
+        if appid is None:
+            self.result_icon.configure(image=None, text="🎮")
+            return
+
+        key = (appid, _RESULT_ICON_SIZE)
+        img = self._icon_mem.get(key)
+        if img is None:
+            path = cached_icon(appid)
+            if path is not None:
+                img = _make_icon_image(path, _RESULT_ICON_SIZE, 10)
+                if img is not None:
+                    self._icon_mem[key] = img
+
+        if img is not None:
+            self.result_icon.configure(image=img, text="")
+            return
+
+        self.result_icon.configure(image=None, text="")
+        if allow_fetch:
+            self._icon_req += 1
+            req = self._icon_req
+            threading.Thread(
+                target=self._fetch_result_icon_bg, args=(appid, req), daemon=True
+            ).start()
+
+    def _fetch_result_icon_bg(self, appid: str, req: int) -> None:
+        path = fetch_icon(appid)
+        if path is not None:
+            self._safe_after(self._apply_result_icon, appid, req, path)
+
+    def _apply_result_icon(self, appid: str, req: int, path: Path) -> None:
+        if not _PIL_OK:
+            return
+        if req != self._icon_req:
+            return
+        if self.current_game is None or self.current_game.appid != appid:
+            return
+        key = (appid, _RESULT_ICON_SIZE)
+        img = self._icon_mem.get(key) or _make_icon_image(path, _RESULT_ICON_SIZE, 10)
+        if img is None:
+            return
+        self._icon_mem[key] = img
+        self.result_icon.configure(image=img, text="")
+
+    def _list_icon_worker(self, q: queue.Queue, win: ctk.CTkToplevel) -> None:
+        while True:
+            try:
+                appid, label = q.get_nowait()
+            except queue.Empty:
+                return
+            path = fetch_icon(appid)
+            if path is not None:
+                self._safe_after(self._apply_list_icon, appid, label, path, win)
+
+    def _apply_list_icon(self, appid: str, label, path: Path, win) -> None:
+        if not _PIL_OK:
+            return
+        try:
+            if not win.winfo_exists() or not label.winfo_exists():
+                return
+        except Exception:
+            return
+        key = (appid, _LIST_ICON_SIZE)
+        img = self._icon_mem.get(key) or _make_icon_image(path, _LIST_ICON_SIZE, 6)
+        if img is None:
+            return
+        self._icon_mem[key] = img
+        label.configure(image=img, text="")
 
     # ---- открытие страницы игры в Steam -----------------------------
 
@@ -256,6 +386,8 @@ class SteamRandomizerApp(ctk.CTk):
             cursor="arrow",
         )
         self.launch_btn.configure(state="disabled")
+        self._icon_req += 1
+        self._show_icon(None, allow_fetch=False)
 
     # ---- чекбокс «Вся библиотека» ------------------------------------
 
@@ -316,6 +448,10 @@ class SteamRandomizerApp(ctk.CTk):
             self._re_enable_controls()
             return
 
+        # Прячем безымянные демо/удалённые записи только если интернет
+        # доступен и остальные названия действительно получены.
+        games = hide_unnamed_games(games, online=last_fetch_online())
+
         self._all_owned_games = games
         self._all_owned_loaded = True
         self._use_full_library = True
@@ -338,6 +474,9 @@ class SteamRandomizerApp(ctk.CTk):
         self._rolling = True
         self._on_finish = on_finish
         self.current_game = None
+        self._icon_req += 1
+        if _PIL_OK:
+            self.result_icon.configure(image=None, text="")
 
         self.roll_btn.configure(state="disabled")
         self.roll_launch_btn.configure(state="disabled")
@@ -358,10 +497,13 @@ class SteamRandomizerApp(ctk.CTk):
                     text_color=("gray10", "gray95"),
                     cursor="hand2",
                 )
+                self._show_icon(game.appid, allow_fetch=True)
             self._finish_roll()
             return
 
-        self.result.configure(text=self.rng.choice(self.games).name)
+        flashed = self.rng.choice(self.games)
+        self.result.configure(text=flashed.name)
+        self._show_icon(flashed.appid, allow_fetch=False)
         self._spin_after_id = self.after(
             _SPIN_DELAYS[step], lambda: self._spin(step + 1)
         )
@@ -398,52 +540,141 @@ class SteamRandomizerApp(ctk.CTk):
         win.title(
             "Вся библиотека" if self._use_full_library else "Все установленные игры"
         )
-        win.geometry("480x620")
-        win.minsize(380, 420)
+        win.geometry("500x640")
+        win.minsize(400, 460)
         win.transient(self)
         win.after(10, win.grab_set)
 
         count = len(self.games)
         word = plural_ru(count, "игра", "игры", "игр")
         if self._use_full_library:
-            title = f"Вся библиотека: {count} {word}"
+            base_title = f"Вся библиотека: {count} {word}"
         else:
-            title = f"Установлено {count} {word}"
-        ctk.CTkLabel(win, text=title, font=("", 14, "bold")).pack(pady=(14, 6))
+            base_title = f"Установлено {count} {word}"
+
+        title_lbl = ctk.CTkLabel(win, text=base_title, font=("", 14, "bold"))
+        title_lbl.pack(pady=(14, 6))
+
+        search_var = ctk.StringVar(value="")
+        search = ctk.CTkEntry(
+            win,
+            textvariable=search_var,
+            placeholder_text="🔍  Поиск по названию или appid…",
+            height=34,
+        )
+        search.pack(fill="x", padx=12, pady=(0, 8))
 
         scroll = ctk.CTkScrollableFrame(win)
         scroll.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
         installed_ids = {g.appid for g in self._installed_games}
+        render_after: list[str | None] = [None]
 
-        for game in sorted(self.games, key=lambda g: g.name.lower()):
-            row = ctk.CTkFrame(scroll, fg_color="transparent")
-            row.pack(fill="x", pady=2)
+        def render() -> None:
+            render_after[0] = None
+            try:
+                if not win.winfo_exists():
+                    return
+            except Exception:
+                return
 
-            label_text = game.name
-            if self._use_full_library and game.appid not in installed_ids:
-                label_text += "   ·  не установлена"
+            query = search_var.get()
+            for child in scroll.winfo_children():
+                child.destroy()
 
-            name_label = ctk.CTkLabel(
-                row,
-                text=label_text,
-                anchor="w",
-                justify="left",
-                wraplength=340,
-                cursor="hand2",
-            )
-            name_label.pack(side="left", fill="x", expand=True, padx=(6, 0))
-            name_label.bind(
-                "<Button-1>", lambda _e, g=game: self._open_store_page(g)
-            )
+            shown = [g for g in self.games if _game_matches(g, query)]
+            if query.strip():
+                title_lbl.configure(text=f"{base_title}  ·  найдено {len(shown)}")
+            else:
+                title_lbl.configure(text=base_title)
 
-            ctk.CTkButton(
-                row,
-                text="▶",
-                width=32,
-                height=26,
-                command=lambda g=game: launch_game(g),
-            ).pack(side="right", padx=(6, 4))
+            if not shown:
+                ctk.CTkLabel(
+                    scroll,
+                    text="Ничего не найдено",
+                    text_color=("gray50", "gray55"),
+                ).pack(pady=24)
+                return
+
+            icon_queue: queue.Queue = queue.Queue()
+            enqueued: set[str] = set()
+
+            for game in sorted(shown, key=lambda g: g.name.lower()):
+                row = ctk.CTkFrame(scroll, fg_color="transparent")
+                row.pack(fill="x", pady=4)
+
+                left = ctk.CTkFrame(row, fg_color="transparent")
+                left.pack(side="left", fill="x", expand=True, padx=(6, 0))
+
+                # Иконка — над названием, как в главном окне.
+                icon_label = ctk.CTkLabel(
+                    left,
+                    text="🎮" if _PIL_OK else "",
+                    font=("", 18),
+                    text_color=("gray60", "gray35"),
+                    height=_LIST_ICON_SIZE[1] if _PIL_OK else 0,
+                    anchor="w",
+                )
+                if _PIL_OK:
+                    icon_label.pack(anchor="w")
+                    icon_label.bind(
+                        "<Button-1>", lambda _e, g=game: self._open_store_page(g)
+                    )
+
+                label_text = game.name
+                if self._use_full_library and game.appid not in installed_ids:
+                    label_text += "   ·  не установлена"
+
+                name_label = ctk.CTkLabel(
+                    left,
+                    text=label_text,
+                    anchor="w",
+                    justify="left",
+                    wraplength=340,
+                    cursor="hand2",
+                )
+                name_label.pack(anchor="w", fill="x")
+                name_label.bind(
+                    "<Button-1>", lambda _e, g=game: self._open_store_page(g)
+                )
+
+                ctk.CTkButton(
+                    row,
+                    text="▶",
+                    width=32,
+                    height=26,
+                    command=lambda g=game: launch_game(g),
+                ).pack(side="right", padx=(6, 4))
+
+                if _PIL_OK:
+                    key = (game.appid, _LIST_ICON_SIZE)
+                    if key in self._icon_mem:
+                        icon_label.configure(image=self._icon_mem[key], text="")
+                    elif game.appid not in enqueued:
+                        enqueued.add(game.appid)
+                        icon_queue.put((game.appid, icon_label))
+
+            if _PIL_OK and not icon_queue.empty():
+                for _ in range(_ICON_WORKERS):
+                    threading.Thread(
+                        target=self._list_icon_worker,
+                        args=(icon_queue, win),
+                        daemon=True,
+                    ).start()
+
+        def on_key(_event=None) -> None:
+            if render_after[0] is not None:
+                try:
+                    win.after_cancel(render_after[0])
+                except Exception:
+                    pass
+            render_after[0] = win.after(180, render)
+
+        search.bind("<KeyRelease>", on_key)
+        search.bind("<Escape>", lambda _e: (search_var.set(""), render()))
+        win.after(60, search.focus_set)
+
+        render()
 
     # ---- очистка -----------------------------------------------------
 

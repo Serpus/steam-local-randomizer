@@ -32,6 +32,16 @@ _LANGUAGE = "english"
 
 _app_names_memory: dict[str, str] = {}
 _fetched_appids: set[str] = set()
+_last_fetch_online = False
+
+
+def last_fetch_online() -> bool:
+    """True, если хотя бы один запрос к Store API в этой сессии прошёл успешно.
+
+    Используется GUI, чтобы скрывать безымянные демо/удалённые игры только
+    когда интернет доступен и остальные названия действительно получены.
+    """
+    return _last_fetch_online
 
 
 def _debug(msg: str) -> None:
@@ -85,6 +95,7 @@ def _save_cache(apps: dict[str, str]) -> None:
 
 def _fetch_chunk(appids: list[str]) -> dict[str, str]:
     """Request up to 100 appids via GetItems. Returns {appid: name}."""
+    global _last_fetch_online
     input_json = {
         "ids": [{"appid": int(a)} for a in appids],
         "context": {
@@ -103,6 +114,10 @@ def _fetch_chunk(appids: list[str]) -> dict[str, str]:
     except Exception as e:  # noqa: BLE001
         _debug(f"chunk fetch failed: {type(e).__name__}: {e}")
         return {}
+
+    # HTTP-ответ получен и распарсен — интернет доступен, даже если items пуст
+    # (удалённые из магазина приложения возвращают пустой список).
+    _last_fetch_online = True
 
     # Response may use snake_case or camelCase depending on Steam's mood.
     response = data.get("response") or data.get("Response") or {}
@@ -159,6 +174,7 @@ def get_app_details(appids: list[str]) -> dict[str, str]:
 
 
 def reset_for_testing() -> None:
-    global _app_names_memory, _fetched_appids
+    global _app_names_memory, _fetched_appids, _last_fetch_online
     _app_names_memory = {}
     _fetched_appids = set()
+    _last_fetch_online = False
