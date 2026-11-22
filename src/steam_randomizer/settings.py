@@ -1,11 +1,15 @@
 """Persistent user settings (theme, filters, etc).
 
-Location: %APPDATA%\\steam-local-randomizer\\settings.json
+Location:
+  * Windows: %APPDATA%\\steam-local-randomizer\\settings.json
+  * Linux / SteamOS: $XDG_CONFIG_HOME/steam-local-randomizer/settings.json
+    (defaults to ~/.config/steam-local-randomizer/)
 """
 from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 _SETTINGS_FILENAME = "settings.json"
@@ -15,11 +19,24 @@ DEFAULTS: dict = {
 }
 
 
+def config_dir() -> Path | None:
+    """Platform-appropriate per-user config directory."""
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA")
+        if not base:
+            return None
+        return Path(base) / "steam-local-randomizer"
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        return Path(xdg) / "steam-local-randomizer"
+    return Path.home() / ".config" / "steam-local-randomizer"
+
+
 def _settings_path() -> Path | None:
-    appdata = os.environ.get("APPDATA")
-    if not appdata:
+    base = config_dir()
+    if base is None:
         return None
-    return Path(appdata) / "steam-local-randomizer" / _SETTINGS_FILENAME
+    return base / _SETTINGS_FILENAME
 
 
 def load_settings() -> dict:

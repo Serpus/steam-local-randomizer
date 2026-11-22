@@ -9,6 +9,7 @@ from steam_randomizer import settings as settings_mod
 @pytest.fixture(autouse=True)
 def tmp_appdata(tmp_path, monkeypatch):
     monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     yield tmp_path
 
 

@@ -1,7 +1,7 @@
 # 🎲 Steam Local Randomizer
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
-[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)]()
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Steam%20Deck-lightgrey)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Version](https://img.shields.io/badge/version-1.1.1-blue)](https://github.com/Serpus/steam-local-randomizer/releases)
 [![Build](https://github.com/Serpus/steam-local-randomizer/actions/workflows/release.yml/badge.svg)](https://github.com/Serpus/steam-local-randomizer/actions/workflows/release.yml)
@@ -77,11 +77,62 @@ Pool size: 42 games
 🎲 Your random game: Hades (appid 1145360)
 ```
 
+### 🐧 Linux и Steam Deck
+
+Приложение работает нативно на любом дистрибутиве Linux и на Steam Deck (SteamOS).
+
+**Способ 1 — из исходников (рекомендуется для Steam Deck):**
+
+```bash
+git clone https://github.com/Serpus/steam-local-randomizer.git
+cd steam-local-randomizer
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .
+
+# CLI:
+steam-randomizer --list
+steam-randomizer
+
+# GUI (в режиме рабочего стола KDE / GNOME):
+steam-randomizer-gui
+```
+
+На Steam Deck: переведите консоль в режим рабочего стола (`Steam → Power →
+Switch to Desktop`), откройте **Konsole** и выполните команды выше. Чтобы запустить
+приложение из режима Big Picture, добавьте его как «стороннюю игру»
+(`Steam → Add a Game → Add a Non-Steam Game`) и в свойствах укажите команду запуска,
+например `bash -lc "~/.local/bin/steam-randomizer-gui"` (или путь к вашему `.venv`).
+
+**Поиск Steam на Linux.** По умолчанию используются стандартные пути
+(`~/.steam/root`, `~/.local/share/Steam`, Flatpak-каталоги). Если Steam стоит в
+нестандартном месте, задайте переменную окружения:
+
+```bash
+export STEAM_PATH=/path/to/Steam
+```
+
+**Запуск игр.** На Linux игры запускаются через `xdg-open steam://rungameid/<appid>`;
+если `xdg-open` недоступен, используется бинарник `steam` или
+`flatpak run com.valvesoftware.Steam`. На Steam Deck это открывает игру так же, как
+обычный запуск из клиента.
+
+**Flatpak-версия Steam.** Если Steam установлен через Flatpak, приложение само найдёт
+библиотеки в `~/.var/app/com.valvesoftware.Steam/data/.steam/root`. Если нет — укажите
+путь через `STEAM_PATH`.
+
+**Настройки и кэш.** На Linux файлы лежат в `$XDG_CONFIG_HOME/steam-local-randomizer/`
+(по умолчанию `~/.config/steam-local-randomizer/`).
+
 ## 🛠 Как это работает
 
-1. **Поиск Steam.** Читает ключ `SteamPath` из реестра
-   `HKEY_CURRENT_USER\Software\Valve\Steam`. Если ключа нет — пробует стандартные пути
-   `C:\Program Files (x86)\Steam` и `C:\Program Files\Steam`.
+1. **Поиск Steam.**
+   - *Windows:* читает ключ `SteamPath` из реестра
+     `HKEY_CURRENT_USER\Software\Valve\Steam`. Если ключа нет — пробует стандартные пути
+     `C:\Program Files (x86)\Steam` и `C:\Program Files\Steam`.
+   - *Linux / SteamOS:* пробует переменную окружения `STEAM_PATH`, затем стандартные
+     расположения: `~/.steam/root`, `~/.local/share/Steam`, Flatpak-директории
+     (`~/.var/app/com.valvesoftware.Steam/...`). На Steam Deck используется нативный путь
+     `~/.steam/root` (он же `/home/deck/.local/share/Steam`).
 2. **Поиск библиотек.** Парсит `steamapps/libraryfolders.vdf` и получает список
    **всех** папок с играми (включая другие диски и внешние SSD).
 3. **Сканирование.** В каждой библиотеке находит файлы `appmanifest_*.acf`
