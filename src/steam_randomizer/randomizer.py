@@ -21,6 +21,7 @@ EXCLUDED_APPIDS: frozenset[str] = frozenset(
         "2348590",  # Proton 8.0
         "2805730",  # Proton 9.0
         "250820",   # SteamVR
+        "431960",   # Wallpaper Engine
     }
 )
 

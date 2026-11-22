@@ -55,3 +55,10 @@ def test_pick_random_game_deterministic_with_seed(make_game):
     a = pick_random_game(games, random.Random(123))
     b = pick_random_game(games, random.Random(123))
     assert a == b
+
+def test_filter_excludes_wallpaper_engine(make_game):
+    games = [
+        make_game("431960", "Wallpaper Engine"),
+        make_game("1145360", "Hades"),
+    ]
+    assert [g.name for g in filter_games(games)] == ["Hades"]
