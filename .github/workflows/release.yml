@@ -9,14 +9,16 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false # Если Linux упадет, Windows всё равно соберется
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest]
         include:
           - os: windows-latest
             ext: ".exe"
+            os_name: "windows"
           - os: ubuntu-latest
             ext: ""
+            os_name: "linux"
 
     steps:
       - uses: actions/checkout@v4.2.2
@@ -29,8 +31,6 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          # python3-tk нужен для customtkinter/tkinter
-          # patchelf нужен PyInstaller'у для корректной упаковки .so библиотек в --onefile
           sudo apt-get install -y python3-tk patchelf
 
       - name: Install Python dependencies
@@ -38,28 +38,34 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools wheel
           python -m pip install -e ".[dev]" --no-build-isolation
-          # Устанавливаем явно, чтобы не зависеть от того, прописаны ли они в pyproject.toml
           pip install pyinstaller pytest
 
       - name: Run tests
-        run: pytest
-        # Если ваши тесты пытаются открыть GUI окно (customtkinter), в Linux CI это упадет
-        # из-за отсутствия дисплея. В таком случае замените строку выше на:
-        # run: xvfb-run -a pytest (и добавьте xvfb в apt-get install выше)
+        run: |
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            # Если тесты используют GUI, xvfb создаст виртуальный дисплей
+            # Если тесты только для CLI, можно оставить просто pytest
+            # sudo apt-get install -y xvfb (добавьте выше, если нужно)
+            pytest 
+          else
+            pytest
+          fi
+        shell: bash
 
+      # Добавляем -${{ matrix.os_name }} к имени файла
       - name: Build GUI
-        run: pyinstaller --onefile --windowed --name steam-randomizer-gui --paths src --collect-all vdf --collect-all customtkinter run_gui.py
+        run: pyinstaller --onefile --windowed --name steam-randomizer-gui-${{ matrix.os_name }} --paths src --collect-all vdf --collect-all customtkinter run_gui.py
 
       - name: Build CLI
-        run: pyinstaller --onefile --console --name steam-randomizer --paths src --collect-all vdf run.py
+        run: pyinstaller --onefile --console --name steam-randomizer-${{ matrix.os_name }} --paths src --collect-all vdf run.py
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: binaries-${{ matrix.os }}
+          name: binaries-${{ matrix.os_name }}
           path: |
-            dist/steam-randomizer-gui${{ matrix.ext }}
-            dist/steam-randomizer${{ matrix.ext }}
+            dist/steam-randomizer-gui-${{ matrix.os_name }}${{ matrix.ext }}
+            dist/steam-randomizer-${{ matrix.os_name }}${{ matrix.ext }}
 
   release:
     needs: build
@@ -72,13 +78,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist
-          merge-multiple: true # Складывает файлы из разных OS в одну папку dist/
+          merge-multiple: true
 
       - name: Attach binaries to release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/steam-randomizer-gui.exe
-            dist/steam-randomizer.exe
-            dist/steam-randomizer-gui
-            dist/steam-randomizer
+            dist/steam-randomizer-gui-windows.exe
+            dist/steam-randomizer-windows.exe
+            dist/steam-randomizer-gui-linux
+            dist/steam-randomizer-linux
