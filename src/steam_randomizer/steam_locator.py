@@ -1,6 +1,7 @@
 """Locate the Steam installation (Windows / Linux / SteamOS)."""
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -63,23 +64,39 @@ def _find_steam_linux() -> Path:
 
     # List of standard Steam locations on Linux (in order of preference)
     candidates = [
-        home / ".steam" / "steam",  # Symlink to actual install
+        home / ".steam" / "steam",  # Symlink to actual install (most common)
+        home / ".steam" / "root",   # Alternative symlink target
         home / ".local" / "share" / "Steam",  # Standard XDG location
         home / ".var" / "app" / "com.valvesoftware.Steam" / ".steam" / "steam",  # Flatpak
+        home / ".var" / "app" / "com.valvesoftware.Steam" / ".local" / "share" / "Steam",  # Flatpak alternative
         Path("/usr/share/steam"),  # System-wide (Arch, some distros)
+        Path("/opt/steam"),  # Some manual installations
     ]
 
     # Also check XDG_DATA_HOME if set
-    xdg_data = sys.modules.get("os", __import__("os")).environ.get("XDG_DATA_HOME")
+    xdg_data = os.environ.get("XDG_DATA_HOME")
     if xdg_data:
-        candidates.insert(1, Path(xdg_data) / "Steam")
+        candidates.insert(2, Path(xdg_data) / "Steam")
 
     for candidate in candidates:
-        # Resolve symlinks and check if it's a valid directory
-        if candidate.is_dir():
+        try:
+            # Resolve symlinks safely
+            resolved = candidate.resolve(strict=False)
+
+            # Check if it's a valid directory
+            if not resolved.is_dir():
+                continue
+
             # Check if steamapps exists (validates it's actually Steam)
-            if (candidate / "steamapps").is_dir() or (candidate / "SteamApps").is_dir():
-                return candidate.resolve()
+            # Steam uses both lowercase and capitalized versions
+            steamapps = resolved / "steamapps"
+            steamapps_alt = resolved / "SteamApps"
+
+            if steamapps.is_dir() or steamapps_alt.is_dir():
+                return resolved
+        except (OSError, PermissionError):
+            # Skip paths we can't access
+            continue
 
     raise SteamNotFoundError(
         "Steam installation not found. Install Steam from your package manager "
