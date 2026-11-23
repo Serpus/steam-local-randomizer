@@ -46,7 +46,6 @@ class AllGamesWindow(ctk.CTkToplevel):
         on_open_store: Callable[[Game], None],
         blacklist: set[str],
         on_toggle_blacklist: Callable[[Game], None],
-        on_clear_blacklist: Callable[[], None],
     ) -> None:
         super().__init__(master)
         self._games = games
@@ -56,7 +55,6 @@ class AllGamesWindow(ctk.CTkToplevel):
         self._open_store = on_open_store
         self._blacklist = set(blacklist)
         self._on_toggle_blacklist_cb = on_toggle_blacklist
-        self._on_clear_blacklist_cb = on_clear_blacklist
 
         self._filtered: list[Game] = []
         self._rows: dict[int, tuple] = {}
@@ -70,7 +68,6 @@ class AllGamesWindow(ctk.CTkToplevel):
         self.geometry("560x660")
         self.minsize(440, 480)
         self.transient(master)
-        self.after(10, self.grab_set)
 
         count = len(games)
         word = plural_ru(count, "игра", "игры", "игр")
@@ -90,11 +87,6 @@ class AllGamesWindow(ctk.CTkToplevel):
         )
         self._search.pack(side="left", fill="x", expand=True)
 
-        # Очистка чёрного списка.
-        ctk.CTkButton(
-            bar, text="⛔", width=34, height=34,
-            command=self._on_clear_blacklist,
-        ).pack(side="right", padx=(6, 0))
         # Повторная попытка загрузки иконок.
         ctk.CTkButton(
             bar, text="⟳", width=34, height=34, command=self._refresh
@@ -138,10 +130,6 @@ class AllGamesWindow(ctk.CTkToplevel):
         self._blacklist = set(new_blacklist)
         self._clear_rows()
         self._schedule()
-
-    def _on_clear_blacklist(self) -> None:
-        log.info("games_window: clearing blacklist")
-        self._on_clear_blacklist_cb()
 
     # ---- фильтр / поиск ----------------------------------------------
 

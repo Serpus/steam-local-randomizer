@@ -28,7 +28,7 @@ from .ui import icons
 from .ui.games_window import AllGamesWindow
 from .ui.icons import IconService
 from .ui.loading import LoadingIndicator
-from .ui.settings_window import SettingsWindow
+from .ui.blacklist_window import BlacklistWindow
 
 _SPIN_DELAYS: tuple[int, ...] = (
     40, 40, 45, 50, 55, 60, 70, 80, 90, 100,
@@ -63,7 +63,7 @@ class SteamRandomizerApp(ctk.CTk):
 
         self._roll_pool: list[Game] = []
         self._all_games_win = None
-        self._settings_win = None
+        self._blacklist_win = None
 
         self._icons = IconService(self._safe_after)
 
@@ -95,7 +95,7 @@ class SteamRandomizerApp(ctk.CTk):
         )
         self.show_all_btn.pack(side="right")
 
-        self.settings_btn = ctk.CTkButton(
+        self.blacklist_btn = ctk.CTkButton(
             header,
             text="⛔",
             width=34,
@@ -103,9 +103,9 @@ class SteamRandomizerApp(ctk.CTk):
             fg_color="transparent",
             border_width=1,
             hover_color=("gray70", "gray30"),
-            command=self._open_settings,
+            command=self._open_blacklist,
         )
-        self.settings_btn.pack(side="right", padx=(0, 6))
+        self.blacklist_btn.pack(side="right", padx=(0, 6))
 
         options_row = ctk.CTkFrame(self, fg_color="transparent")
         options_row.pack(fill="x", padx=22, pady=(4, 0))
@@ -349,20 +349,20 @@ class SteamRandomizerApp(ctk.CTk):
 
     # ---- чёрный список ------------------------------------------------
 
-    def _open_settings(self) -> None:
-        if self._settings_win is not None:
+    def _open_blacklist(self) -> None:
+        if self._blacklist_win is not None:
             try:
-                if self._settings_win.winfo_exists():
-                    self._settings_win.focus()
+                if self._blacklist_win.winfo_exists():
+                    self._blacklist_win.focus()
                     return
             except Exception:
-                self._settings_win = None
+                self._blacklist_win = None
 
         games = self._installed_games
         if self._use_full_library and self._all_owned_games:
             games = self._all_owned_games
 
-        self._settings_win = SettingsWindow(
+        self._blacklist_win = BlacklistWindow(
             self,
             games=games,
             on_blacklist_changed=self._on_blacklist_changed,
@@ -387,13 +387,36 @@ class SteamRandomizerApp(ctk.CTk):
 
     def _toggle_blacklist(self, game: Game) -> None:
         app_settings.toggle_blacklist(game.appid)
+        new_bl = app_settings.get_blacklist()
+        # Синхронизация: обновляем окно «Все игры»
         if self._all_games_win is not None:
-            self._all_games_win.update_blacklist(app_settings.get_blacklist())
+            try:
+                if self._all_games_win.winfo_exists():
+                    self._all_games_win.update_blacklist(new_bl)
+            except Exception:
+                pass
+        # Синхронизация: обновляем окно ЧС
+        if self._blacklist_win is not None:
+            try:
+                if self._blacklist_win.winfo_exists():
+                    self._blacklist_win.update_blacklist(new_bl)
+            except Exception:
+                pass
 
     def _clear_blacklist(self) -> None:
         app_settings.clear_blacklist()
         if self._all_games_win is not None:
-            self._all_games_win.update_blacklist(set())
+            try:
+                if self._all_games_win.winfo_exists():
+                    self._all_games_win.update_blacklist(set())
+            except Exception:
+                pass
+        if self._blacklist_win is not None:
+            try:
+                if self._blacklist_win.winfo_exists():
+                    self._blacklist_win.update_blacklist(set())
+            except Exception:
+                pass
 
     # ---- рулетка ----------------------------------------------------
 
@@ -460,6 +483,14 @@ class SteamRandomizerApp(ctk.CTk):
     def _show_all_games(self) -> None:
         if not self.games:
             return
+        if self._all_games_win is not None:
+            try:
+                if self._all_games_win.winfo_exists():
+                    self._all_games_win.focus()
+                    return
+            except Exception:
+                self._all_games_win = None
+
         self._all_games_win = AllGamesWindow(
             self,
             games=self.games,
@@ -469,7 +500,7 @@ class SteamRandomizerApp(ctk.CTk):
             on_open_store=self._open_store_page,
             blacklist=app_settings.get_blacklist(),
             on_toggle_blacklist=self._toggle_blacklist,
-            on_clear_blacklist=self._clear_blacklist,
+            # on_clear_blacklist убран — кнопка очистки только в окне ЧС
         )
 
     # ---- очистка -----------------------------------------------------
@@ -482,7 +513,7 @@ class SteamRandomizerApp(ctk.CTk):
             except Exception:
                 pass
         self._all_games_win = None
-        self._settings_win = None
+        self._blacklist_win = None
         super().destroy()
 
 

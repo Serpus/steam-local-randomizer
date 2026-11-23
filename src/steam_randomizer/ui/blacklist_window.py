@@ -1,12 +1,8 @@
-"""Окно настроек: управление чёрным списком и другими параметрами.
-
-Сейчас содержит раздел «Чёрный список»:
-  - галочка «Не учитывать игры из чёрного списка»,
-  - список игр в чёрном списке с кнопками удаления,
-  - кнопка «Очистить весь чёрный список».
+"""Окно чёрного списка: просмотр, удаление игр, очистка, переключатель учёта.
 
 При изменении списка через колбэк `on_blacklist_changed` уведомляется
 главное окно, чтобы синхронизировать окно «Все игры».
+Метод `update_blacklist()` вызывается извне для обратной синхронизации.
 """
 from __future__ import annotations
 
@@ -25,7 +21,7 @@ _ROW_BG = "#313131"
 _ROW_HOVER = "#3d3d3d"
 
 
-class SettingsWindow(ctk.CTkToplevel):
+class BlacklistWindow(ctk.CTkToplevel):
     def __init__(
         self,
         master,
@@ -37,11 +33,11 @@ class SettingsWindow(ctk.CTkToplevel):
         self._games_by_id = {g.appid: g for g in games}
         self._on_blacklist_changed_cb = on_blacklist_changed
 
-        self.title("Настройки")
+        self.title("⛔ Чёрный список")
         self.geometry("500x560")
         self.minsize(420, 400)
         self.transient(master)
-        self.after(10, self.grab_set)
+        # grab_set() убран — окно не модальное, главное окно работает
 
         self._build_ui()
 
@@ -151,19 +147,27 @@ class SettingsWindow(ctk.CTkToplevel):
             )
             name.pack(side="left", fill="x", expand=True, padx=(4, 0), pady=6)
 
+    # ---- Публичные методы для внешней синхронизации ----
+
+    def update_blacklist(self, new_blacklist: set[str]) -> None:
+        """Вызывается извне (из главного окна) для синхронизации списка."""
+        self._render_list()
+
+    # ---- Внутренние обработчики ----
+
     def _on_use_toggle(self) -> None:
         app_settings.set_use_blacklist(self._use_var.get())
-        log.info("settings: use_blacklist = %s", self._use_var.get())
+        log.info("blacklist_window: use_blacklist = %s", self._use_var.get())
         self._on_blacklist_changed_cb(app_settings.get_blacklist())
 
     def _on_remove(self, game: Game) -> None:
-        log.info("settings: removing %s (appid %s) from blacklist", game.name, game.appid)
+        log.info("blacklist_window: removing %s (appid %s)", game.name, game.appid)
         app_settings.toggle_blacklist(game.appid)
         self._render_list()
         self._on_blacklist_changed_cb(app_settings.get_blacklist())
 
     def _on_clear(self) -> None:
-        log.info("settings: clearing entire blacklist")
+        log.info("blacklist_window: clearing entire blacklist")
         app_settings.clear_blacklist()
         self._render_list()
         self._on_blacklist_changed_cb(app_settings.get_blacklist())
