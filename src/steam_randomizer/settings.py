@@ -1,12 +1,13 @@
-"""Persistent user settings (theme, filters, etc).
+r"""Persistent user settings (theme, filters, etc).
 
 Location:
-  * Windows: %APPDATA%\\steam-local-randomizer\\settings.json
+  * Windows: %APPDATA%\steam-local-randomizer\settings.json
   * Linux / SteamOS: $XDG_CONFIG_HOME/steam-local-randomizer/settings.json
     (defaults to ~/.config/steam-local-randomizer/)
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import sys
@@ -15,7 +16,9 @@ from pathlib import Path
 _SETTINGS_FILENAME = "settings.json"
 
 DEFAULTS: dict = {
-    "theme": "dark",  # "dark" | "light"
+    "theme": "dark",          # "dark" | "light"
+    "use_blacklist": True,     # учитывать чёрный список при выборе
+    "blacklist": [],           # список appid, которые никогда не должны выпадать
 }
 
 
@@ -43,14 +46,14 @@ def load_settings() -> dict:
     """Load settings merged with defaults. Never raises."""
     path = _settings_path()
     if path is None or not path.is_file():
-        return dict(DEFAULTS)
+        return copy.deepcopy(DEFAULTS)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return dict(DEFAULTS)
+        return copy.deepcopy(DEFAULTS)
     if not isinstance(data, dict):
-        return dict(DEFAULTS)
-    merged = dict(DEFAULTS)
+        return copy.deepcopy(DEFAULTS)
+    merged = copy.deepcopy(DEFAULTS)
     merged.update(data)
     return merged
 
@@ -68,3 +71,47 @@ def save_settings(settings: dict) -> None:
         )
     except OSError:
         pass
+
+
+# ---- Чёрный список ----------------------------------------------------
+
+def get_blacklist() -> set[str]:
+    """Текущий чёрный список как множество appid."""
+    s = load_settings()
+    return set(str(a) for a in s.get("blacklist", []))
+
+
+def is_blacklisted(appid: str) -> bool:
+    return str(appid) in get_blacklist()
+
+
+def toggle_blacklist(appid: str) -> bool:
+    """Добавить/удалить из чёрного списка. Возвращает, в списке ли игра сейчас."""
+    s = load_settings()
+    bl = set(str(a) for a in s.get("blacklist", []))
+    appid = str(appid)
+    if appid in bl:
+        bl.discard(appid)
+    else:
+        bl.add(appid)
+    s["blacklist"] = sorted(bl)
+    save_settings(s)
+    return appid in bl
+
+
+def clear_blacklist() -> None:
+    """Полностью очистить чёрный список."""
+    s = load_settings()
+    s["blacklist"] = []
+    save_settings(s)
+
+
+def is_use_blacklist() -> bool:
+    """Учитывается ли чёрный список при выборе."""
+    return bool(load_settings().get("use_blacklist", True))
+
+
+def set_use_blacklist(enabled: bool) -> None:
+    s = load_settings()
+    s["use_blacklist"] = bool(enabled)
+    save_settings(s)

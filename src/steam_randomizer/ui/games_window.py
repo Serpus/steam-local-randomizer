@@ -3,6 +3,7 @@
 400+ игр не фризит: в памяти лишь видимые строки (+буфер), поиск не
 пересоздаёт тысячи виджетов, иконки грузятся только для видимых строк.
 «⟳» принудительно перепроверяет видимые иконки, игнорируя .miss.
+Поддержка чёрного списка: кнопка «⛔» у каждой игры + очистка всего списка.
 """
 from __future__ import annotations
 
@@ -43,6 +44,9 @@ class AllGamesWindow(ctk.CTkToplevel):
         use_full_library: bool,
         icon_service,
         on_open_store: Callable[[Game], None],
+        blacklist: set[str],
+        on_toggle_blacklist: Callable[[Game], None],
+        on_clear_blacklist: Callable[[], None],
     ) -> None:
         super().__init__(master)
         self._games = games
@@ -50,6 +54,9 @@ class AllGamesWindow(ctk.CTkToplevel):
         self._full = use_full_library
         self._icons = icon_service
         self._open_store = on_open_store
+        self._blacklist = set(blacklist)
+        self._on_toggle_blacklist_cb = on_toggle_blacklist
+        self._on_clear_blacklist_cb = on_clear_blacklist
 
         self._filtered: list[Game] = []
         self._rows: dict[int, tuple] = {}
@@ -60,8 +67,8 @@ class AllGamesWindow(ctk.CTkToplevel):
         self._force_icons = False
 
         self.title("Вся библиотека" if self._full else "Все установленные игры")
-        self.geometry("520x660")
-        self.minsize(420, 480)
+        self.geometry("560x660")
+        self.minsize(440, 480)
         self.transient(master)
         self.after(10, self.grab_set)
 
@@ -82,9 +89,16 @@ class AllGamesWindow(ctk.CTkToplevel):
             placeholder_text="🔍  Поиск по названию или appid…", height=34,
         )
         self._search.pack(side="left", fill="x", expand=True)
-        ctk.CTkButton(bar, text="⟳", width=34, height=34, command=self._refresh).pack(
-            side="right", padx=(6, 0)
-        )
+
+        # Очистка чёрного списка.
+        ctk.CTkButton(
+            bar, text="⛔", width=34, height=34,
+            command=self._on_clear_blacklist,
+        ).pack(side="right", padx=(6, 0))
+        # Повторная попытка загрузки иконок.
+        ctk.CTkButton(
+            bar, text="⟳", width=34, height=34, command=self._refresh
+        ).pack(side="right", padx=(6, 0))
 
         self._footer = ctk.CTkLabel(
             self, text="Наведите на игру, чтобы увидеть полное название",
@@ -116,6 +130,18 @@ class AllGamesWindow(ctk.CTkToplevel):
         self.after(60, self._search.focus_set)
 
         self._apply_filter("")
+
+    # ---- чёрный список ------------------------------------------------
+
+    def update_blacklist(self, new_blacklist: set[str]) -> None:
+        """Обновить чёрный список и перерисовать видимые строки."""
+        self._blacklist = set(new_blacklist)
+        self._clear_rows()
+        self._schedule()
+
+    def _on_clear_blacklist(self) -> None:
+        log.info("games_window: clearing blacklist")
+        self._on_clear_blacklist_cb()
 
     # ---- фильтр / поиск ----------------------------------------------
 
@@ -247,12 +273,13 @@ class AllGamesWindow(ctk.CTkToplevel):
             self._icons.request_many(tasks, icons.LIST_SIZE, icons.LIST_RADIUS, force=force)
 
     def _trunc(self, text: str) -> str:
-        max_chars = max(12, (self._content_w - 100) // 7)
+        max_chars = max(12, (self._content_w - 130) // 7)
         return text if len(text) <= max_chars else text[: max_chars - 1] + "…"
 
     def _create_row(self, index: int) -> list[tuple[str, Callable]]:
         game = self._filtered[index]
         installed = game.appid in self._installed_ids
+        in_blacklist = game.appid in self._blacklist
         y = index * ROW_H
 
         frame = ctk.CTkFrame(
@@ -260,11 +287,25 @@ class AllGamesWindow(ctk.CTkToplevel):
         )
         frame.pack_propagate(False)
 
-        btn = ctk.CTkButton(
+        # Кнопка запуска — самая правая.
+        launch_btn = ctk.CTkButton(
             frame, text="▶", width=34, height=30,
             command=lambda g=game: launch_game(g),
         )
-        btn.pack(side="right", padx=(4, 10))
+        launch_btn.pack(side="right", padx=(4, 10))
+
+        # Кнопка чёрного списка — левее запуска.
+        bl_btn = ctk.CTkButton(
+            frame,
+            text="⛔",
+            width=32,
+            height=30,
+            fg_color="#7a2e2e" if in_blacklist else "transparent",
+            hover_color="#964040" if in_blacklist else ("gray70", "gray30"),
+            border_width=0 if in_blacklist else 1,
+            command=lambda g=game: self._on_toggle_blacklist_cb(g),
+        )
+        bl_btn.pack(side="right", padx=(2, 4))
 
         icon = None
         if icons.PIL_OK:
@@ -275,10 +316,21 @@ class AllGamesWindow(ctk.CTkToplevel):
             icon.pack(side="top", anchor="w", padx=(12, 0), pady=(6, 0))
             icon.bind("<Button-1>", lambda _e, g=game: self._open_store(g))
 
+        # Название: приглушённое, если игра в чёрном списке.
+        if in_blacklist:
+            name_color = ("gray55", "gray45")
+        elif installed:
+            name_color = ("gray10", "gray90")
+        else:
+            name_color = ("gray40", "gray55")
+
+        name_text = self._trunc(game.name)
+        if in_blacklist:
+            name_text = "⛔ " + name_text
+
         name = ctk.CTkLabel(
-            frame, text=self._trunc(game.name), anchor="w", justify="left",
-            font=("", 13, "bold"), height=22,
-            text_color=("gray10", "gray90") if installed else ("gray40", "gray55"),
+            frame, text=name_text, anchor="w", justify="left",
+            font=("", 13, "bold"), height=22, text_color=name_color,
         )
         name.pack(side="top", anchor="w", fill="x", padx=(12, 0), pady=(2, 0))
         name.bind("<Button-1>", lambda _e, g=game: self._open_store(g))
@@ -288,14 +340,15 @@ class AllGamesWindow(ctk.CTkToplevel):
         )
         self._rows[index] = (frame, item, icon, name)
 
-        for w in (frame, icon, name, btn):
+        for w in (frame, icon, name, launch_btn, bl_btn):
             if w is not None:
                 self._bind_wheel(w)
 
         def enter(_e, g=game, f=frame):
             f.configure(fg_color=_ROW_HOVER)
             state = "" if (not self._full or g.appid in self._installed_ids) else "  ·  не установлена"
-            self._footer.configure(text=f"{g.name}  ·  appid {g.appid}{state}")
+            bl_state = "  ·  в чёрном списке" if g.appid in self._blacklist else ""
+            self._footer.configure(text=f"{g.name}  ·  appid {g.appid}{state}{bl_state}")
 
         def leave(_e, f=frame):
             f.configure(fg_color=_ROW_BG)

@@ -15,6 +15,7 @@ from collections.abc import Callable
 import customtkinter as ctk
 
 from . import __version__
+from . import settings as app_settings
 from .full_library import find_all_owned_games
 from .game_filter import hide_unnamed_games
 from .i18n import plural_ru
@@ -27,6 +28,7 @@ from .ui import icons
 from .ui.games_window import AllGamesWindow
 from .ui.icons import IconService
 from .ui.loading import LoadingIndicator
+from .ui.settings_window import SettingsWindow
 
 _SPIN_DELAYS: tuple[int, ...] = (
     40, 40, 45, 50, 55, 60, 70, 80, 90, 100,
@@ -59,6 +61,10 @@ class SteamRandomizerApp(ctk.CTk):
         self._on_finish: Callable[[], None] | None = None
         self._icon_req = 0
 
+        self._roll_pool: list[Game] = []
+        self._all_games_win = None
+        self._settings_win = None
+
         self._icons = IconService(self._safe_after)
 
         self._build_ui()
@@ -88,6 +94,18 @@ class SteamRandomizerApp(ctk.CTk):
             state="disabled",
         )
         self.show_all_btn.pack(side="right")
+
+        self.settings_btn = ctk.CTkButton(
+            header,
+            text="⛔",
+            width=34,
+            height=28,
+            fg_color="transparent",
+            border_width=1,
+            hover_color=("gray70", "gray30"),
+            command=self._open_settings,
+        )
+        self.settings_btn.pack(side="right", padx=(0, 6))
 
         options_row = ctk.CTkFrame(self, fg_color="transparent")
         options_row.pack(fill="x", padx=22, pady=(4, 0))
@@ -329,14 +347,68 @@ class SteamRandomizerApp(ctk.CTk):
             self.roll_launch_btn.configure(state="normal")
             self.show_all_btn.configure(state="normal")
 
+    # ---- чёрный список ------------------------------------------------
+
+    def _open_settings(self) -> None:
+        if self._settings_win is not None:
+            try:
+                if self._settings_win.winfo_exists():
+                    self._settings_win.focus()
+                    return
+            except Exception:
+                self._settings_win = None
+
+        games = self._installed_games
+        if self._use_full_library and self._all_owned_games:
+            games = self._all_owned_games
+
+        self._settings_win = SettingsWindow(
+            self,
+            games=games,
+            on_blacklist_changed=self._on_blacklist_changed,
+        )
+
+    def _on_blacklist_changed(self, new_blacklist: set[str]) -> None:
+        """Синхронизация: обновляем окно «Все игры» если оно открыто."""
+        if self._all_games_win is not None:
+            try:
+                if self._all_games_win.winfo_exists():
+                    self._all_games_win.update_blacklist(new_blacklist)
+            except Exception:
+                pass
+
+    def _get_roll_pool(self) -> list[Game]:
+        """Пул для рулетки с учётом чёрного списка."""
+        pool = self.games
+        if app_settings.is_use_blacklist():
+            bl = app_settings.get_blacklist()
+            pool = [g for g in pool if g.appid not in bl]
+        return pool
+
+    def _toggle_blacklist(self, game: Game) -> None:
+        app_settings.toggle_blacklist(game.appid)
+        if self._all_games_win is not None:
+            self._all_games_win.update_blacklist(app_settings.get_blacklist())
+
+    def _clear_blacklist(self) -> None:
+        app_settings.clear_blacklist()
+        if self._all_games_win is not None:
+            self._all_games_win.update_blacklist(set())
+
     # ---- рулетка ----------------------------------------------------
 
     def _roll(self, on_finish: Callable[[], None] | None = None) -> None:
         if self._rolling or self._loader.active or not self.games:
             return
+        pool = self._get_roll_pool()
+        if not pool:
+            self.status.configure(text="Все игры в чёрном списке — нечего крутить.")
+            return
+
         self._rolling = True
         self._on_finish = on_finish
         self.current_game = None
+        self._roll_pool = pool
         self._icon_req += 1
         self._set_result_placeholder(glyph="")
 
@@ -349,7 +421,7 @@ class SteamRandomizerApp(ctk.CTk):
 
     def _spin(self, step: int) -> None:
         if step >= len(_SPIN_DELAYS):
-            game = pick_random_game(self.games, self.rng)
+            game = pick_random_game(self._roll_pool, self.rng)
             if game is not None:
                 self.current_game = game
                 self.result.configure(
@@ -358,7 +430,7 @@ class SteamRandomizerApp(ctk.CTk):
                 self._show_result_icon(game.appid, allow_fetch=True)
             self._finish_roll()
             return
-        flashed = self.rng.choice(self.games)
+        flashed = self.rng.choice(self._roll_pool)
         self.result.configure(text=flashed.name)
         self._show_result_icon(flashed.appid, allow_fetch=False)
         self._spin_after_id = self.after(_SPIN_DELAYS[step], lambda: self._spin(step + 1))
@@ -388,13 +460,16 @@ class SteamRandomizerApp(ctk.CTk):
     def _show_all_games(self) -> None:
         if not self.games:
             return
-        AllGamesWindow(
+        self._all_games_win = AllGamesWindow(
             self,
             games=self.games,
             installed_ids={g.appid for g in self._installed_games},
             use_full_library=self._use_full_library,
             icon_service=self._icons,
             on_open_store=self._open_store_page,
+            blacklist=app_settings.get_blacklist(),
+            on_toggle_blacklist=self._toggle_blacklist,
+            on_clear_blacklist=self._clear_blacklist,
         )
 
     # ---- очистка -----------------------------------------------------
@@ -406,6 +481,8 @@ class SteamRandomizerApp(ctk.CTk):
                 self.after_cancel(self._spin_after_id)
             except Exception:
                 pass
+        self._all_games_win = None
+        self._settings_win = None
         super().destroy()
 
 
