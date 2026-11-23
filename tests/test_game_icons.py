@@ -8,6 +8,10 @@ import pytest
 
 from steam_randomizer import game_icons
 
+JPEG = b"\xff\xd8\xff" + b"JPEGDATA"
+CAPSULE = b"\xff\xd8\xff" + b"CAPSULE"
+AKAMAI = b"\xff\xd8\xff" + b"FROM_AKAMAI"
+
 
 @pytest.fixture(autouse=True)
 def _isolated_cache(tmp_path, monkeypatch):
@@ -46,7 +50,7 @@ def _404(url):
 
 
 def test_invalid_appid_never_touches_network(monkeypatch):
-    calls = _patch_urlopen(monkeypatch, lambda url: _Resp(b"x"))
+    calls = _patch_urlopen(monkeypatch, lambda url: _Resp(JPEG))
     for bad in ("", "abc", "../evil", "12;rm", "-1"):
         assert game_icons.fetch_icon(bad) is None
         assert game_icons.cached_icon(bad) is None
@@ -54,9 +58,9 @@ def test_invalid_appid_never_touches_network(monkeypatch):
 
 
 def test_download_and_cache(monkeypatch):
-    calls = _patch_urlopen(monkeypatch, lambda url: _Resp(b"JPEGDATA"))
+    calls = _patch_urlopen(monkeypatch, lambda url: _Resp(JPEG))
     p = game_icons.fetch_icon("440")
-    assert p is not None and p.is_file() and p.read_bytes() == b"JPEGDATA"
+    assert p is not None and p.is_file() and p.read_bytes() == JPEG
     assert len(calls) == 1
     assert game_icons.fetch_icon("440") == p
     assert game_icons.cached_icon("440") == p
@@ -67,18 +71,18 @@ def test_fallback_to_capsule(monkeypatch):
     def handler(url):
         if url.endswith("header.jpg"):
             _404(url)
-        return _Resp(b"CAPSULE")
+        return _Resp(CAPSULE)
 
     calls = _patch_urlopen(monkeypatch, handler)
     p = game_icons.fetch_icon("1145360")
-    assert p is not None and p.read_bytes() == b"CAPSULE"
+    assert p is not None and p.read_bytes() == CAPSULE
     assert len(calls) == 2
 
 
 def test_404_everywhere_writes_negative_cache(monkeypatch):
     calls = _patch_urlopen(monkeypatch, _404)
     assert game_icons.fetch_icon("999") is None
-    assert len(calls) == 2  # первый хост дал 404 на оба файла — второй не пробуем
+    assert len(calls) == 2
     assert game_icons.fetch_icon("999") is None
     assert len(calls) == 2
 
@@ -90,9 +94,9 @@ def test_network_error_retries_and_no_negative_cache(monkeypatch):
     calls = _patch_urlopen(monkeypatch, handler)
     assert game_icons.fetch_icon("570") is None
     first = len(calls)
-    assert first >= 2  # были ретраи
+    assert first >= 2
     assert game_icons.fetch_icon("570") is None
-    assert len(calls) > first  # не помечено как missing — пробуем снова
+    assert len(calls) > first
 
 
 def test_403_is_temporary_not_missing(monkeypatch):
@@ -101,8 +105,6 @@ def test_403_is_temporary_not_missing(monkeypatch):
 
     calls = _patch_urlopen(monkeypatch, handler)
     assert game_icons.fetch_icon("730") is None
-    assert len(calls) >= 2
-    # .miss не создан — при следующем запросе снова полезем в сеть
     before = len(calls)
     assert game_icons.fetch_icon("730") is None
     assert len(calls) > before
@@ -112,9 +114,16 @@ def test_alternate_host_used_on_error(monkeypatch):
     def handler(url):
         if "cloudflare" in url:
             raise urllib.error.URLError("edge down")
-        return _Resp(b"FROM_AKAMAI")
+        return _Resp(AKAMAI)
 
     calls = _patch_urlopen(monkeypatch, handler)
     p = game_icons.fetch_icon("10")
-    assert p is not None and p.read_bytes() == b"FROM_AKAMAI"
+    assert p is not None and p.read_bytes() == AKAMAI
     assert any("akamai" in u for u in calls)
+
+
+def test_non_image_payload_rejected_and_not_cached(monkeypatch):
+    calls = _patch_urlopen(monkeypatch, lambda url: _Resp(b"<html>age gate</html>"))
+    assert game_icons.fetch_icon("123") is None
+    assert game_icons.cached_icon("123") is None
+    assert len(calls) >= 2
