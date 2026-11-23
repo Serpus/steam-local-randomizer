@@ -84,7 +84,7 @@ class IconService:
         except Exception:
             log.exception("icon %s: on_ready raised", appid)
 
-    def request(self, appid: str, size, radius, on_ready: Callable) -> None:
+    def request(self, appid: str, size, radius, on_ready: Callable, *, force: bool = False) -> None:
         if not PIL_OK:
             return
         img = self.cached(appid, size, radius)
@@ -93,7 +93,7 @@ class IconService:
             return
 
         def work() -> None:
-            path = fetch_icon(appid)
+            path = fetch_icon(appid, force=force)
             if path is None:
                 log.debug("icon %s: fetch returned None", appid)
                 return
@@ -101,7 +101,15 @@ class IconService:
 
         threading.Thread(target=work, daemon=True).start()
 
-    def request_many(self, tasks: list[tuple[str, Callable]], size, radius, workers: int = 3) -> None:
+    def request_many(
+        self,
+        tasks: list[tuple[str, Callable]],
+        size,
+        radius,
+        workers: int = 3,
+        *,
+        force: bool = False,
+    ) -> None:
         if not PIL_OK or not tasks:
             return
         q: queue.Queue = queue.Queue()
@@ -116,7 +124,10 @@ class IconService:
                     log.exception("icon %s: on_ready (cached) raised", appid)
             else:
                 q.put((appid, on_ready))
-        log.debug("icons: %d tasks (%d cached, %d to fetch)", len(tasks), immediate, q.qsize())
+        log.debug(
+            "icons: %d tasks (%d cached, %d to fetch, force=%s)",
+            len(tasks), immediate, q.qsize(), force,
+        )
         if q.empty():
             return
 
@@ -126,7 +137,7 @@ class IconService:
                     appid, on_ready = q.get_nowait()
                 except queue.Empty:
                     return
-                path = fetch_icon(appid)
+                path = fetch_icon(appid, force=force)
                 if path is None:
                     log.debug("icon %s: fetch returned None", appid)
                     continue

@@ -1,8 +1,8 @@
 """Окно «Все игры»: виртуализированный список (только видимые строки).
 
-400+ игр больше не фризит: в памяти живут лишь строки видимого диапазона
-(+буфер), поиск не пересоздаёт тысячи виджетов, иконки грузятся только
-для видимых строк. Прокрутка — по фиксированной высоте строки.
+400+ игр не фризит: в памяти лишь видимые строки (+буфер), поиск не
+пересоздаёт тысячи виджетов, иконки грузятся только для видимых строк.
+«⟳» принудительно перепроверяет видимые иконки, игнорируя .miss.
 """
 from __future__ import annotations
 
@@ -14,10 +14,13 @@ import customtkinter as ctk
 from ..i18n import plural_ru
 from ..library_parser import Game
 from ..launcher import launch_game
+from ..log import get_logger
 from . import icons
 
-ROW_H = 88          # фиксированная высота строки (иконка над названием)
-BUFFER = 4          # строк запаса выше/ниже видимой области
+log = get_logger()
+
+ROW_H = 88
+BUFFER = 4
 _CANVAS_BG = "#242424"
 _ROW_BG = "#313131"
 _ROW_HOVER = "#3d3d3d"
@@ -54,6 +57,7 @@ class AllGamesWindow(ctk.CTkToplevel):
         self._render_pending: str | None = None
         self._search_after: str | None = None
         self._empty_item = None
+        self._force_icons = False
 
         self.title("Вся библиотека" if self._full else "Все установленные игры")
         self.geometry("520x660")
@@ -142,6 +146,8 @@ class AllGamesWindow(ctk.CTkToplevel):
         self._schedule()
 
     def _refresh(self) -> None:
+        log.info("list: manual refresh (force icon retry for visible rows)")
+        self._force_icons = True
         self._clear_rows()
         self._schedule()
 
@@ -222,6 +228,8 @@ class AllGamesWindow(ctk.CTkToplevel):
         bottom = self._canvas.canvasy(h)
         first = max(0, int(top // ROW_H) - BUFFER)
         last = min(n - 1, int(bottom // ROW_H) + BUFFER)
+        force = self._force_icons
+        self._force_icons = False
 
         for idx in list(self._rows):
             if idx < first or idx > last:
@@ -233,8 +241,10 @@ class AllGamesWindow(ctk.CTkToplevel):
         for idx in range(first, last + 1):
             if idx not in self._rows:
                 tasks.extend(self._create_row(idx))
+        log.debug("list render: %d games, rows %d-%d, new tasks=%d, force=%s",
+                  n, first, last, len(tasks), force)
         if tasks:
-            self._icons.request_many(tasks, icons.LIST_SIZE, icons.LIST_RADIUS)
+            self._icons.request_many(tasks, icons.LIST_SIZE, icons.LIST_RADIUS, force=force)
 
     def _trunc(self, text: str) -> str:
         max_chars = max(12, (self._content_w - 100) // 7)
@@ -297,12 +307,14 @@ class AllGamesWindow(ctk.CTkToplevel):
                 w.bind("<Leave>", leave)
 
         if icons.PIL_OK and icon is not None:
-            def ready(img, lbl=icon):
+            def ready(img, lbl=icon, aid=game.appid):
                 try:
                     if lbl.winfo_exists():
                         lbl.configure(image=img, text="")
+                    else:
+                        log.debug("icon %s: ready but row already recycled", aid)
                 except Exception:
-                    pass
+                    log.exception("icon %s: apply to row failed", aid)
             return [(game.appid, ready)]
         return []
 
