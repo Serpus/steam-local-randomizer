@@ -83,6 +83,10 @@ def scan_library(library_path: Path) -> list[Game]:
 def find_installed_games(steam_path: Path) -> list[Game]:
     """Scan all Steam libraries and return every installed game entry."""
     all_games: list[Game] = []
+    seen: set[str] = set()
     for library in get_library_paths(steam_path):
-        all_games.extend(scan_library(library))
+        for game in scan_library(library):
+            if game.appid not in seen:
+                seen.add(game.appid)
+                all_games.append(game)
     return all_games

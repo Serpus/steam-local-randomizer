@@ -199,6 +199,6 @@ def test_api_fallback_when_cdn_404(monkeypatch):
 
 def test_api_transient_failure_does_not_mark_miss(monkeypatch):
     monkeypatch.setattr(game_icons, "_resolve_via_api", lambda a: (None, False))
-    calls = _patch_urlopen(monkeypatch, _404)
+    _patch_urlopen(monkeypatch, _404)
     assert game_icons.fetch_icon("777") is None
     assert not (game_icons._icons_dir() / "777.miss").is_file()

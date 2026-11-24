@@ -56,7 +56,7 @@ def main():
 
         from steam_randomizer.app_names import resolve_names
         resolved = resolve_names(steam, owned)
-        print(f"\n--- resolve_names ---")
+        print("\n--- resolve_names ---")
         print(f"  resolved: {len(resolved)} / {len(owned)}")
 
 

@@ -16,7 +16,6 @@ from pathlib import Path
 _SETTINGS_FILENAME = "settings.json"
 
 DEFAULTS: dict = {
-    "theme": "dark",          # "dark" | "light"
     "use_blacklist": True,     # учитывать чёрный список при выборе
     "blacklist": [],           # список appid, которые никогда не должны выпадать
 }
@@ -58,17 +57,35 @@ def load_settings() -> dict:
     return merged
 
 
+def _backup_if_unreadable(path: Path) -> None:
+    """Скопировать битый settings.json в `.corrupt`, чтобы запись его не стёрла."""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    try:
+        json.loads(raw)
+    except ValueError:
+        try:
+            path.with_name(path.name + ".corrupt").write_text(raw, encoding="utf-8")
+        except OSError:
+            pass
+
+
 def save_settings(settings: dict) -> None:
-    """Write settings to disk. Never raises."""
+    """Write settings to disk atomically. Never raises."""
     path = _settings_path()
     if path is None:
         return
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
+        _backup_if_unreadable(path)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(
             json.dumps(settings, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        os.replace(tmp, path)
     except OSError:
         pass
 

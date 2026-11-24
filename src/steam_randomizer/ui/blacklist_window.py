@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 import customtkinter as ctk
 
@@ -113,8 +114,13 @@ class BlacklistWindow(ctk.CTkToplevel):
         blacklisted_games = []
         for appid in bl:
             game = self._games_by_id.get(appid)
-            if game is not None:
-                blacklisted_games.append(game)
+            if game is None:
+                # Игры нет в переданном снимке библиотеки — показываем заглушку,
+                # чтобы запись можно было убрать вручную.
+                game = Game(
+                    appid=appid, name=f"App {appid}", installdir="", library_path=Path()
+                )
+            blacklisted_games.append(game)
         blacklisted_games.sort(key=lambda g: g.name.lower())
 
         for game in blacklisted_games:

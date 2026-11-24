@@ -29,5 +29,8 @@ jobs:
           pip install --upgrade setuptools wheel
           python -m pip install -e ".[dev]" --no-build-isolation
 
+      - name: Lint
+        run: ruff check .
+
       - name: Run tests
         run: pytest -v

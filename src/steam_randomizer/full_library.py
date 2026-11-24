@@ -1,6 +1,7 @@
 """Load the user's full Steam library (installed + uninstalled)."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import vdf
@@ -51,7 +52,10 @@ def _load_owned_appids(config_dir: Path) -> set[str]:
     return {str(k) for k in apps.keys() if str(k).isdigit()}
 
 
-def find_all_owned_games(steam_path: Path) -> list[Game]:
+def find_all_owned_games(
+    steam_path: Path,
+    on_progress: Callable[[int, int], None] | None = None,
+) -> list[Game]:
     """Every game the user owns, with real names when available."""
     config_dir = _find_latest_userdata(steam_path)
     if config_dir is None:
@@ -61,7 +65,7 @@ def find_all_owned_games(steam_path: Path) -> list[Game]:
     if not owned:
         return []
 
-    infos = resolve_names(steam_path, owned)
+    infos = resolve_names(steam_path, owned, on_progress=on_progress)
     installed = {g.appid: g for g in find_installed_games(steam_path)}
 
     games: list[Game] = []

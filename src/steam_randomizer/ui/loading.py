@@ -22,6 +22,10 @@ class LoadingIndicator:
             pass
         self._tick(0)
 
+    def set_message(self, message: str) -> None:
+        """Сменить текст ожидания, не останавливая анимацию."""
+        self._base = message
+
     def _tick(self, dots: int) -> None:
         if not self.active:
             return

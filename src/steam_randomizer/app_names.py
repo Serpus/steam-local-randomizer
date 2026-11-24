@@ -8,6 +8,7 @@ Supports:
 from __future__ import annotations
 
 import struct
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -231,7 +232,11 @@ def read_registry_names() -> dict[str, str]:
     return names
 
 
-def resolve_names(steam_path: Path, appids: Iterable[str]) -> dict[str, AppInfo]:
+def resolve_names(
+    steam_path: Path,
+    appids: Iterable[str],
+    on_progress: Callable[[int, int], None] | None = None,
+) -> dict[str, AppInfo]:
     """appid -> AppInfo: appinfo.vdf, registry, then Steam Store API."""
     wanted = {str(a) for a in appids}
 
@@ -249,7 +254,7 @@ def resolve_names(steam_path: Path, appids: Iterable[str]) -> dict[str, AppInfo]
     missing = wanted - found.keys()
     if missing:
         from .steam_api import get_app_details
-        names = get_app_details(list(missing))
+        names = get_app_details(list(missing), on_progress=on_progress)
         for appid, name in names.items():
             found[appid] = AppInfo(appid, name)
 

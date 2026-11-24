@@ -54,12 +54,12 @@ def make_icon_image(path: Path, size: tuple[int, int], radius: int) -> ctk.CTkIm
 class IconService:
     def __init__(self, schedule: Callable[..., None]) -> None:
         self._schedule = schedule
-        self._mem: dict[tuple[str, tuple[int, int]], ctk.CTkImage] = {}
+        self._mem: dict[tuple[str, tuple[int, int], int], ctk.CTkImage] = {}
 
     def cached(self, appid: str, size, radius) -> ctk.CTkImage | None:
         if not PIL_OK:
             return None
-        key = (appid, size)
+        key = (appid, size, radius)
         img = self._mem.get(key)
         if img is not None:
             return img
@@ -72,7 +72,7 @@ class IconService:
         return img
 
     def _deliver(self, appid, size, radius, path, on_ready) -> None:
-        key = (appid, size)
+        key = (appid, size, radius)
         img = self._mem.get(key) or make_icon_image(path, size, radius)
         if img is None:
             log.warning("icon %s: deliver failed (image build)", appid)

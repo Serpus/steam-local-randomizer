@@ -102,3 +102,25 @@ def test_find_installed_games_aggregates_libraries(tmp_path):
     games = find_installed_games(steam)
     names = {g.name for g in games}
     assert names == {"Game A", "Game B"}
+
+
+def test_find_installed_games_deduplicates_appid(tmp_path):
+    steam = tmp_path / "Steam"
+    extra = tmp_path / "ExtraLibrary"
+    _write_vdf(
+        steam / "steamapps" / "libraryfolders.vdf",
+        {
+            "libraryfolders": {
+                "0": {"path": str(steam)},
+                "1": {"path": str(extra)},
+            }
+        },
+    )
+    for lib in (steam, extra):
+        _write_vdf(
+            lib / "steamapps" / "appmanifest_5.acf",
+            {"AppState": {"appid": "5", "name": "Dup", "installdir": "Dup"}},
+        )
+
+    games = find_installed_games(steam)
+    assert [g.appid for g in games] == ["5"]

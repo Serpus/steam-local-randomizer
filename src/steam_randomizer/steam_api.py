@@ -16,6 +16,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -31,6 +32,7 @@ _COUNTRY_CODE = "US"       # neutral region, avoids RU-specific blocks
 _LANGUAGE = "english"
 
 _app_names_memory: dict[str, str] = {}
+_app_times: dict[str, float] = {}   # appid -> epoch, когда имя получено
 _fetched_appids: set[str] = set()
 _last_fetch_online = False
 
@@ -56,7 +58,20 @@ def _cache_path() -> Path | None:
     return base / _CACHE_FILENAME
 
 
+def _parse_ts(value) -> float | None:
+    """Epoch-секунды из числа или ISO-строки. None, если формат незнаком."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return None
+    return None
+
+
 def _load_cache() -> dict[str, str]:
+    """Кэш с TTL по каждой записи (старый формат — общий fetched_at)."""
     path = _cache_path()
     if path is None or not path.is_file():
         return {}
@@ -64,17 +79,29 @@ def _load_cache() -> dict[str, str]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
-    fetched_at = data.get("fetched_at")
     apps = data.get("apps")
-    if not isinstance(fetched_at, str) or not isinstance(apps, dict):
+    if not isinstance(apps, dict):
         return {}
-    try:
-        when = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
-    except ValueError:
-        return {}
-    if datetime.now(timezone.utc) - when > _CACHE_TTL:
-        return {}
-    return {str(k): str(v) for k, v in apps.items() if v}
+    file_time = _parse_ts(data.get("fetched_at"))
+    per_app = data.get("apps_fetched_at")
+    if not isinstance(per_app, dict):
+        per_app = {}
+    now = time.time()
+    ttl = _CACHE_TTL.total_seconds()
+
+    result: dict[str, str] = {}
+    for key, name in apps.items():
+        if not name:
+            continue
+        when = _parse_ts(per_app.get(key))
+        if when is None:
+            when = file_time
+        if when is None or now - when > ttl:
+            continue
+        appid = str(key)
+        result[appid] = str(name)
+        _app_times[appid] = when
+    return result
 
 
 def _save_cache(apps: dict[str, str]) -> None:
@@ -83,9 +110,12 @@ def _save_cache(apps: dict[str, str]) -> None:
         return
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
+        now = time.time()
         payload = {
             "fetched_at": datetime.now(timezone.utc).isoformat(),
             "apps": apps,
+            # Срок жизни считается по каждой записи, а не по времени файла.
+            "apps_fetched_at": {str(k): _app_times.get(str(k), now) for k in apps},
         }
         path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         _debug(f"saved cache: {path} ({path.stat().st_size} bytes)")
@@ -137,11 +167,15 @@ def _fetch_chunk(appids: list[str]) -> dict[str, str]:
     return result
 
 
-def get_app_details(appids: list[str]) -> dict[str, str]:
+def get_app_details(
+    appids: list[str],
+    on_progress: Callable[[int, int], None] | None = None,
+) -> dict[str, str]:
     """Return {appid: name} for given appids.
 
     Uses cache → memory → network (in chunks of 100).
     Already-queried appids are never re-queried this session.
+    on_progress(done, total) вызывается после каждого чанка (из worker-потока).
     Never raises.
     """
     global _app_names_memory, _fetched_appids
@@ -163,11 +197,19 @@ def get_app_details(appids: list[str]) -> dict[str, str]:
         _debug(f"chunk {i // _CHUNK_SIZE + 1}: {len(chunk)} appids")
         fetched.update(_fetch_chunk(chunk))
         _fetched_appids.update(chunk)
+        if on_progress is not None:
+            try:
+                on_progress(min(i + _CHUNK_SIZE, len(missing)), len(missing))
+            except Exception:  # noqa: BLE001
+                pass
         if i + _CHUNK_SIZE < len(missing):
             time.sleep(_CHUNK_DELAY)
 
     if fetched:
         _app_names_memory.update(fetched)
+        now = time.time()
+        for appid in fetched:
+            _app_times[appid] = now
         _save_cache(_app_names_memory)
 
     return {str(a): _app_names_memory[str(a)] for a in appids if str(a) in _app_names_memory}
@@ -176,5 +218,6 @@ def get_app_details(appids: list[str]) -> dict[str, str]:
 def reset_for_testing() -> None:
     global _app_names_memory, _fetched_appids, _last_fetch_online
     _app_names_memory = {}
+    _app_times.clear()
     _fetched_appids = set()
     _last_fetch_online = False

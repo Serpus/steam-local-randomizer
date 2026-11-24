@@ -309,10 +309,13 @@ class SteamRandomizerApp(ctk.CTk):
     def _load_full_library_bg(self) -> None:
         try:
             steam_path = find_steam_path()
-            games = find_all_owned_games(steam_path)
+            games = find_all_owned_games(steam_path, on_progress=self._on_full_lib_progress)
             self._safe_after(self._on_full_library_loaded, games, None)
         except Exception as exc:  # noqa: BLE001
             self._safe_after(self._on_full_library_loaded, None, str(exc))
+
+    def _on_full_lib_progress(self, done: int, total: int) -> None:
+        self._safe_after(self._loader.set_message, f"Загружаем названия игр: {done} из {total}")
 
     def _on_full_library_loaded(self, games: list[Game] | None, error: str | None) -> None:
         self._loader.stop()
