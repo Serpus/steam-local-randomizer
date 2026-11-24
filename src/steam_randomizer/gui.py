@@ -149,6 +149,21 @@ class SteamRandomizerApp(ctk.CTk):
         self.result.pack(pady=(10, 18), expand=True)
         self.result.bind("<Button-1>", self._on_result_clicked)
 
+        # Кнопка «В чёрный список» — появляется только после ролла.
+        # Пока игра не выбрана или в списке, pack_forget() держит её невидимой.
+        self.blacklist_game_btn = ctk.CTkButton(
+            self,
+            text="🚫  В чёрный список",
+            height=30,
+            width=240,
+            fg_color="transparent",
+            border_width=1,
+            hover_color=("gray70", "gray30"),
+            font=("", 12),
+            command=self._toggle_current_blacklist,
+        )
+        # НЕ вызываем .pack() здесь — только по завершении ролла.
+
         self.roll_btn = ctk.CTkButton(
             self,
             text="🎲  Крутить!",
@@ -181,6 +196,31 @@ class SteamRandomizerApp(ctk.CTk):
             font=("", 11),
             text_color=("gray50", "gray60"),
         ).pack(side="bottom", anchor="e", padx=14, pady=(0, 6))
+
+    # ---- кнопка чёрного списка у результата --------------------------
+
+    def _update_blacklist_btn(self) -> None:
+        """Показать/скрыть кнопку и обновить её текст по текущей игре."""
+        if self.current_game is None:
+            try:
+                self.blacklist_game_btn.pack_forget()
+            except Exception:
+                pass
+            return
+
+        in_bl = self.current_game.appid in app_settings.get_blacklist()
+        self.blacklist_game_btn.configure(
+            text=("✅  Убрать из чёрного списка" if in_bl else "🚫  В чёрный список")
+        )
+        try:
+            self.blacklist_game_btn.pack(pady=(0, 12), before=self.roll_btn)
+        except Exception:
+            pass
+
+    def _toggle_current_blacklist(self) -> None:
+        if self.current_game is None:
+            return
+        self._toggle_blacklist(self.current_game)
 
     # ---- иконка результата -------------------------------------------
 
@@ -281,6 +321,7 @@ class SteamRandomizerApp(ctk.CTk):
         self.launch_btn.configure(state="disabled")
         self._icon_req += 1
         self._set_result_placeholder()
+        self._update_blacklist_btn()
 
     # ---- чекбокс «Вся библиотека» ------------------------------------
 
@@ -405,6 +446,8 @@ class SteamRandomizerApp(ctk.CTk):
                     self._blacklist_win.update_blacklist(new_bl)
             except Exception:
                 pass
+        # Синхронизация: обновляем кнопку на главном экране
+        self._update_blacklist_btn()
 
     def _clear_blacklist(self) -> None:
         app_settings.clear_blacklist()
@@ -420,6 +463,7 @@ class SteamRandomizerApp(ctk.CTk):
                     self._blacklist_win.update_blacklist(set())
             except Exception:
                 pass
+        self._update_blacklist_btn()
 
     # ---- рулетка ----------------------------------------------------
 
@@ -437,6 +481,7 @@ class SteamRandomizerApp(ctk.CTk):
         self._roll_pool = pool
         self._icon_req += 1
         self._set_result_placeholder(glyph="")
+        self._update_blacklist_btn()
 
         self.roll_btn.configure(state="disabled")
         self.roll_launch_btn.configure(state="disabled")
@@ -469,6 +514,7 @@ class SteamRandomizerApp(ctk.CTk):
         self.full_library_check.configure(state="normal")
         if self.current_game is not None:
             self.launch_btn.configure(state="normal")
+        self._update_blacklist_btn()
         cb = self._on_finish
         self._on_finish = None
         if cb is not None:
